@@ -1,0 +1,7 @@
+Untitled-1.md
+.venv
+.shop/migrations
+.users/migrations
+.wallet/migrations
+generate_fernet_key.py
+foodhybrid1
