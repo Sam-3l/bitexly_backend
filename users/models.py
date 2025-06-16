@@ -3,7 +3,6 @@ from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, Permis
 import random
 import uuid
 from django.contrib.auth.hashers import make_password, check_password
-from shop.models import PartnerInvestment
 
 class UserManager(BaseUserManager):
     def create_user(self, email, password=None,**extra_fields):
@@ -39,7 +38,7 @@ class Users(AbstractBaseUser, PermissionsMixin):
       USER_TYPE_CHOICES = (
         ('admin', 'Admin'),
         # ('driver', 'Driver'),
-        ('partner', 'Partner'),
+        ('trader', 'Trader'),
     )
       email = models.EmailField(max_length=255, unique=True)
       username = models.CharField(max_length=150,blank=True,null=False)
@@ -82,36 +81,7 @@ class EmailOTP(models.Model):
     def __str__(self):
         return f"{self.user.email} - {self.otp}"
 
-class Driver(models.Model):
-    user = models.OneToOneField(Users, on_delete=models.CASCADE, related_name='driver_profile')
-    driver_id = models.CharField(max_length=20, unique=True)
-    phone_number = models.CharField(max_length=15, blank=True)
-    password = models.CharField(max_length=128)
 
-    def save(self, *args, **kwargs):
-        if not self.driver_id:
-            self.driver_id = f'DRV-{uuid.uuid4().hex[:8].upper()}'
-        super().save(*args, **kwargs)
-
-    def __str__(self):
-        return f"Driver {self.driver_id}"
-
-class OrderDeliveryConfirmation(models.Model):
-    investment = models.OneToOneField(PartnerInvestment, on_delete=models.CASCADE, related_name='delivery_confirmation')
-    business_name = models.CharField(max_length=255)
-    recievers_name = models.CharField(max_length=255)
-    vendor_email = models.EmailField()
-    vendor_location = models.CharField(max_length=255)
-    otp = models.CharField(max_length=6, blank=True)
-    otp_sent_at = models.DateTimeField(null=True, blank=True)
-    is_confirmed = models.BooleanField(default=False)
-    confirmed_at = models.DateTimeField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    @property
-    def order_id(self):
-        return self.investment.order_id
-    
 class Notification(models.Model):
     NOTIFICATION_TYPES = (
         ('fund', 'Funding'),

@@ -9,10 +9,11 @@ from django.utils import timezone
 class SignUpSerializer(serializers.ModelSerializer):
     first_name = serializers.CharField(required=False,allow_blank=True)
     last_name = serializers.CharField(required=False,allow_blank=True) 
+    username = serializers.CharField(required=True)
 
     class Meta:
         model = Users
-        fields = ['email','first_name', 'last_name']
+        fields = ['email','first_name', 'last_name', 'username']
         extra_kwargs = {
             'email': {'validators': []}
         }
@@ -28,7 +29,8 @@ class SignUpSerializer(serializers.ModelSerializer):
             email=validated_data['email'],
             first_name=validated_data.get('first_name', ''),
             last_name=validated_data.get('last_name', ''),
-            user_type='partner',
+            username=validated_data.get('username', ''),
+            user_type='trader',
             is_email_verified=False
         )
         print("saved")
@@ -36,7 +38,6 @@ class SignUpSerializer(serializers.ModelSerializer):
     
 class CompleteRegistrationSerializer(serializers.Serializer):
     email = serializers.EmailField()
-    username = serializers.CharField(required=False)
     password = serializers.CharField(write_only=True, required=False)
 
     def validate(self, data):
@@ -51,9 +52,9 @@ class CompleteRegistrationSerializer(serializers.Serializer):
         if user.username and user.has_usable_password():
             raise serializers.ValidationError({"detail": "Registration is already completed."})
 
-        if 'username' in data:
-            if Users.objects.filter(username=data['username']).exclude(pk=user.pk).exists():
-                raise serializers.ValidationError("Username already taken.")
+        # if 'username' in data:
+        #     if Users.objects.filter(username=data['username']).exclude(pk=user.pk).exists():
+        #         raise serializers.ValidationError("Username already taken.")
             
             
         try:
@@ -68,9 +69,9 @@ class CompleteRegistrationSerializer(serializers.Serializer):
         user = self.validated_data['user']
         updated_fields = []
 
-        if 'username' in self.validated_data:
-            user.username = self.validated_data['username']
-            updated_fields.append('username')
+        # if 'username' in self.validated_data:
+        #     user.username = self.validated_data['username']
+        #     updated_fields.append('username')
 
         if 'password' in self.validated_data:
             user.set_password(self.validated_data['password'])
