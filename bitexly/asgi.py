@@ -13,7 +13,7 @@ from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.auth import AuthMiddlewareStack
 from .routing import websocket_urlpatterns
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'foodhybrid.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'bitexly.settings')
 
 
 application = ProtocolTypeRouter({

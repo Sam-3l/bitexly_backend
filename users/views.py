@@ -1,21 +1,14 @@
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from .models import Users, EmailOTP, Driver, OrderDeliveryConfirmation, Notification
+from .models import Users, EmailOTP
 from drf_yasg.utils import swagger_auto_schema
-from .serializers import PartnerInvestmentSerializer,ProfileSerializer, SignUpSerializer, CompleteRegistrationSerializer, ResetPasswordOTPSerializer, NotificationSerializer
-from django.utils import timezone
-from datetime import datetime
+from .serializers import SignUpSerializer, CompleteRegistrationSerializer, ResetPasswordOTPSerializer
 from bitexly.utils import send_email
 from drf_yasg import openapi
 from rest_framework.parsers import MultiPartParser, FormParser,JSONParser
-from rest_framework.pagination import PageNumberPagination
-from django.db.models import Sum, Q
-from .utils import generate_otp, get_tokens_for_user,set_user_pin,retrieve_user_pin
-from .permisssion import IsPartner, IsAdmin
-from django.utils.timezone import now
-from django.db.models.functions import TruncDate
-from decimal import Decimal
+from .utils import generate_otp, get_tokens_for_user
+from .permisssion import IsPartner
 import os
 
 

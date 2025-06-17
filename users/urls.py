@@ -2,13 +2,13 @@ from django.urls import path
 from .views import *
 
 urlpatterns = [
-    path('signup/partner/', SignupView.as_view(), name='partner-signup'),
-    path('signin/partner/', SigninView.as_view(), name="partner-signin"),
-    path('verify-otp/partner/', VerifyOTPView.as_view(), name="verifyotp"),
-    path('forgot-password/partner/', PasswordResetView.as_view(), name="forgot password"),
+    path('signup/', SignupView.as_view(), name='partner-signup'),
+    path('signin/', SigninView.as_view(), name="partner-signin"),
+    path('verify-otp/', VerifyOTPView.as_view(), name="verifyotp"),
+    path('forgot-password/', PasswordResetView.as_view(), name="forgot password"),
     # path('reset-password-otp/partner/', ResetPasswordWithOTPView.as_view(), name="reset password"),
-    path('change-password/partner/', ChangePasswordView.as_view(), name="Change Password"),
-    path('profile/update/partner/', UpdateProfileView.as_view(), name='update-profile'),
+    path('change-password/', ChangePasswordView.as_view(), name="Change Password"),
+    path('profile/update/', UpdateProfileView.as_view(), name='update-profile'),
     # path('transactionhistory/partner/', UserTransactionHistoryView.as_view(), name='transaction-history'),
     # path('alltransactionHistory/admin/', AllTransactionsView.as_view(), name="all-transactions"),
     # path('notifications/partner/', NotificationListView.as_view(), name="get-notified"),

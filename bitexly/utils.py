@@ -37,7 +37,7 @@ def send_email(user, subject, message, code=None, action_url=None, action_text=N
     email = EmailMultiAlternatives(
         subject=subject,
         body=message,  # fallback text version
-        from_email='Foodhybrid <no-reply@yourdomain.com>',
+        from_email='Bitexly <no-reply@yourdomain.com>',
         to=[user.email]
     )
     email.attach_alternative(html_content, "text/html")
