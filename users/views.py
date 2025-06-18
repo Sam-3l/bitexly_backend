@@ -28,11 +28,12 @@ class SignupView(APIView):
     def post(self, request):
         resend = request.data.get('resend', False)
         serializer = SignUpSerializer(data=request.data)
+
         if resend:
             otp_code = generate_otp()
-            EmailOTP.objects.create(user=user, otp=otp_code)
+            EmailOTP.objects.create(user=serializer.email, otp=otp_code)
             # send_reg_otp_email(user, otp_code)
-            send_email(user,"Your OTP Code", "Use the code below to verify your account.", code=otp_code)
+            send_email(serializer,"Your OTP Code", "Use the code below to verify your account.", code=otp_code)
             return Response({'detail': 'OTP resent to your email.'}, status=status.HTTP_200_OK)
         
         if not serializer.is_valid():

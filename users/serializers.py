@@ -9,7 +9,7 @@ from django.utils import timezone
 class SignUpSerializer(serializers.ModelSerializer):
     first_name = serializers.CharField(required=False,allow_blank=True)
     last_name = serializers.CharField(required=False,allow_blank=True) 
-    username = serializers.CharField(required=True)
+    username = serializers.CharField(required=False)
 
     class Meta:
         model = Users
@@ -21,7 +21,7 @@ class SignUpSerializer(serializers.ModelSerializer):
     def validate_email(self, value):
         existing_user = Users.objects.filter(email=value).first()
         if existing_user and existing_user.is_email_verified:
-            raise serializers.ValidationError("A user with this email is already verified.")
+            raise serializers.ValidationError({"detail":"A user with this email is already verified."})
         return value
 
     def create(self, validated_data):
@@ -47,10 +47,10 @@ class CompleteRegistrationSerializer(serializers.Serializer):
             raise serializers.ValidationError("User not found.")
 
         if not user.is_email_verified:
-            raise serializers.ValidationError({"error":"Email is not verified yet."})
+            raise serializers.ValidationError("Email is not verified yet.")
         
         if user.username and user.has_usable_password():
-            raise serializers.ValidationError({"detail": "Registration is already completed."})
+            raise serializers.ValidationError("Registration is already completed.")
 
         # if 'username' in data:
         #     if Users.objects.filter(username=data['username']).exclude(pk=user.pk).exists():
@@ -60,6 +60,7 @@ class CompleteRegistrationSerializer(serializers.Serializer):
         try:
             validate_password(data['password'], user=user)
         except DjangoValidationError as e:
+            print({"password": list(e.messages)})
             raise serializers.ValidationError({"password": list(e.messages)})
 
         data['user'] = user
