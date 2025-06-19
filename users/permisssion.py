@@ -1,11 +1,11 @@
 from rest_framework.permissions import BasePermission
 
-class IsPartner(BasePermission):
+class IsTrader(BasePermission):
     def has_permission(self, request, view):
         return (
             request.user and 
             request.user.is_authenticated and 
-            request.user.user_type == 'partner'
+            request.user.user_type == 'trader'
         )
 
 
@@ -18,10 +18,10 @@ class IsAdmin(BasePermission):
         )
 
 
-class IsAdminOrPartner(BasePermission):
+class IsAdminOrTrader(BasePermission):
     def has_permission(self, request, view):
         return (
             request.user and 
             request.user.is_authenticated and 
-            request.user.user_type in ['admin', 'partner']
+            request.user.user_type in ['admin', 'trader']
         )

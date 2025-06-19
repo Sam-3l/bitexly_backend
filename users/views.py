@@ -3,12 +3,12 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from .models import Users, EmailOTP
 from drf_yasg.utils import swagger_auto_schema
-from .serializers import SignUpSerializer, CompleteRegistrationSerializer, ResetPasswordOTPSerializer
+from .serializers import SignUpSerializer, CompleteRegistrationSerializer, ResetPasswordOTPSerializer, ProfileSerializer
 from bitexly.utils import send_email
 from drf_yasg import openapi
 from rest_framework.parsers import MultiPartParser, FormParser,JSONParser
 from .utils import generate_otp, get_tokens_for_user
-from .permisssion import IsPartner
+from .permisssion import IsTrader
 import os
 
 
@@ -154,11 +154,12 @@ class PasswordResetView(APIView):
                     # Stage 3: Reset password
                     serializer.save()
                     return Response({"detail": "Password has been reset successfully."}, status=status.HTTP_200_OK)
+            print(serializer.errors)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 # authenticated user reset password
 class ChangePasswordView(APIView):
-    permission_classes = [IsPartner]
+    permission_classes = [IsTrader]
     @swagger_auto_schema(
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
@@ -255,7 +256,7 @@ class SigninView(APIView):
 
 
 class UpdateProfileView(APIView):
-    permission_classes = [IsPartner]
+    permission_classes = [IsTrader]
     parser_classes = [MultiPartParser, FormParser, JSONParser]  # for handling file uploads
 
     def patch(self, request):
@@ -289,6 +290,14 @@ class UpdateProfileView(APIView):
         return Response({'detail': 'Profile updated successfully.'}, status=status.HTTP_200_OK)
 
 
+
+class DetailsView(APIView):
+    permission_classes = [IsTrader]
+
+    def get(self, request):
+        user = request.user
+        serializer = ProfileSerializer(user)
+        return Response(serializer.data)
 # class TransactionPagination(PageNumberPagination):
 #     page_size = 10
 

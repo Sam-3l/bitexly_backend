@@ -13,5 +13,5 @@ urlpatterns = [
     # path('alltransactionHistory/admin/', AllTransactionsView.as_view(), name="all-transactions"),
     # path('notifications/partner/', NotificationListView.as_view(), name="get-notified"),
     # path('notification/read/', NotificationMarkAsReadView.as_view(), name="mark-read-notification"),
-    # path('getDetails/', PartnerDetailsView.as_view(), name="partner-details")
+    path('getDetails/', DetailsView.as_view(), name="partner-details")
 ]
