@@ -7,7 +7,7 @@ from .serializers import SignUpSerializer, CompleteRegistrationSerializer, Reset
 from bitexly.utils import send_email
 from drf_yasg import openapi
 from rest_framework.parsers import MultiPartParser, FormParser,JSONParser
-from .utils import generate_otp, get_tokens_for_user
+from .utils import generate_otp, get_tokens_for_user, set_user_pin
 from .permisssion import IsTrader
 import os
 
@@ -253,6 +253,53 @@ class SigninView(APIView):
         else:
             return Response({'detail': 'Invalid credentials.'}, status=status.HTTP_401_UNAUTHORIZED)
   
+class SetPinView(APIView):
+    permission_classes = [IsTrader]
+
+    def post(self, request):
+        user = request.user
+        if user.user_type != 'trader':
+            return Response({'detail': 'Only trader can set a PIN.'}, status=status.HTTP_403_FORBIDDEN)
+
+        pin_set = bool(user.pin_hash and user.pin_hash.strip() != "")
+        if pin_set:
+             email = request.user.email
+             otp = request.data.get('otp')
+             new_pin = request.data.get('pin')
+                 # Step 1: Send OTP
+             if email and not otp:
+                 raw_otp = generate_otp()
+                 request.session['otp'] = raw_otp
+                 request.session['email'] = email
+                 request.session.modified = True
+                 # Send OTP via email here in real use
+                 send_email(user,"Your OTP Code", "Use the code below to set your pin", code=raw_otp)
+                 return Response({'detail': f'OTP sent to {email}', 'otp': raw_otp})
+                 # Step 2: Verify OTP
+             if not otp:
+                 return Response({'detail': 'OTP is required.'}, status=status.HTTP_400_BAD_REQUEST)
+             if otp != request.session.get('otp'):
+                 return Response({'detail': 'Invalid OTP.'}, status=status.HTTP_403_FORBIDDEN)
+             if not new_pin:
+                 return Response({"detail": 'Enter a new pin'}, status=status.HTTP_400_BAD_REQUEST)
+                 # Step 3: Reset PIN
+             user = request.user
+             user.pin_hash = set_user_pin(new_pin)
+             user.save()
+                 # Step 4: Clear session
+             request.session.pop('otp', None)
+             request.session.pop('email', None)
+             return Response({'detail': 'Your withdrawal PIN has been successfully reset.'}, status=status.HTTP_200_OK)
+     
+        pin = request.data.get('transaction_pin')
+        if not pin or len(pin) < 4 or not pin.isdigit():
+           return Response({'detail': 'PIN must be at least 4 digits.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        encrypted_pin = set_user_pin(pin)
+        user.pin_hash = encrypted_pin
+        user.save()
+    
+        return Response({'detail': 'PIN set successfully.'})
 
 
 class UpdateProfileView(APIView):
@@ -297,7 +344,8 @@ class DetailsView(APIView):
     def get(self, request):
         user = request.user
         serializer = ProfileSerializer(user)
-        return Response(serializer.data)
+        has_pin = bool(user.pin_hash and user.pin_hash.strip())
+        return Response({"user_details":serializer.data, "has_pin" : has_pin})
 # class TransactionPagination(PageNumberPagination):
 #     page_size = 10
 
