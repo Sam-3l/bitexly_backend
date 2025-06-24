@@ -57,6 +57,9 @@ class Users(AbstractBaseUser, PermissionsMixin):
       reset_otp = models.CharField(max_length=4, blank=True, null=True)
       reset_otp_expiry = models.DateTimeField(null=True, blank=True)
       pin_hash = models.CharField(max_length=128, blank=True, null=True) 
+      referral_code = models.CharField(max_length=10, unique=True, blank=True, null=True)
+      referred_by = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='referrals')
+      reward_points = models.PositiveIntegerField(default=0)
 
       
       def set_pin(self, raw_pin):
@@ -64,6 +67,11 @@ class Users(AbstractBaseUser, PermissionsMixin):
   
       def check_pin(self, raw_pin):
           return check_password(raw_pin, self.pin_hash)
+      
+      def save(self, *args, **kwargs):
+        if not self.referral_code:
+            self.referral_code = str(uuid.uuid4()).replace('-', '')[:10].upper()
+        super().save(*args, **kwargs)
   
       objects = UserManager()
   

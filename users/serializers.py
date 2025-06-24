@@ -39,6 +39,7 @@ class SignUpSerializer(serializers.ModelSerializer):
 class CompleteRegistrationSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True, required=False)
+    referral_code_input = serializers.CharField(write_only=True, required=False)
 
     def validate(self, data):
         try:
@@ -67,8 +68,20 @@ class CompleteRegistrationSerializer(serializers.Serializer):
         return data
 
     def save(self):
+        referral_code_input = self.validated_data.get('referral_code_input', None)
         user = self.validated_data['user']
         updated_fields = []
+
+        if referral_code_input and not user.referred_by:
+            try:
+                referrer = Users.objects.get(referral_code=referral_code_input)
+                user.referred_by = referrer
+                referrer.reward_points += 100  # Customize your reward logic
+                referrer.save(update_fields=['reward_points'])
+                updated_fields.append('referred_by')
+            except Users.DoesNotExist:
+                pass  # You may also raise a validation error here
+
 
         # if 'username' in self.validated_data:
         #     user.username = self.validated_data['username']
@@ -85,7 +98,7 @@ class CompleteRegistrationSerializer(serializers.Serializer):
 class ProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = Users
-        fields = ['id', 'username', 'email', 'first_name', 'last_name']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name','referral_code']
 
 class NotificationSerializer(serializers.ModelSerializer):
     class Meta:
