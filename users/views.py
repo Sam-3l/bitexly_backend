@@ -1,17 +1,32 @@
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from .models import Users, EmailOTP
+from .models import Users, EmailOTP, Transaction
 from drf_yasg.utils import swagger_auto_schema
-from .serializers import SignUpSerializer, CompleteRegistrationSerializer, ResetPasswordOTPSerializer, ProfileSerializer
+from .serializers import SignUpSerializer, CompleteRegistrationSerializer, TransactionSerializer, ResetPasswordOTPSerializer, ProfileSerializer
 from bitexly.utils import send_email
 from drf_yasg import openapi
 from rest_framework.parsers import MultiPartParser, FormParser,JSONParser
 from .utils import generate_otp, get_tokens_for_user, set_user_pin
 from .permisssion import IsTrader
 import os
+from django.conf import settings
+import requests
+import hmac
+import hashlib
+import json
 
 
+MELD_API_KEY = settings.MELD_CRYPTO_API_KEY
+MELD_WEBHOOK_SECRET = settings.MELD_WEBHOOK_SECRET
+MELD_BASE = "https://api.meld.io/payments/crypto"
+
+
+def get_headers():
+    return {
+        "Authorization": f"Bearer {MELD_API_KEY}",
+        "Content-Type": "application/json",
+    }
 # Create your views here.
 
 
@@ -538,3 +553,127 @@ class DetailsView(APIView):
 #             return Response({'detail': 'Invalid action.'}, status=400)
 
 #         return Response({'detail': f'Withdrawal {action}ed successfully.'})
+
+
+class CreateQuoteView(APIView):
+    permission_classes = [IsTrader]
+
+    def post(self, request):
+        try:
+            payload = {
+                "sourceAmount": str(request.data.get("source_amount")),
+                "sourceCurrencyCode": request.data.get("source_currency"),
+                "destinationCurrencyCode": request.data.get("destination_currency"),
+                "countryCode": request.data.get("country_code", "NG"),  # fallback
+            }
+            response = requests.post(f"{MELD_BASE}/quote", headers=get_headers(), json=payload)
+            return Response(response.json(), status=response.status_code)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=500)
+
+
+class CreatePaymentView(APIView):
+    permission_classes = [IsTrader]
+
+    def post(self, request):
+        try:
+            payload = {
+                "quoteId": request.data.get("quote_id"),
+                "callbackUrl": request.data.get("callback_url"),  # e.g. https://yourapp.com/api/meld/webhook/
+            }
+            response = requests.post(f"{MELD_BASE}/payment", headers=get_headers(), json=payload)
+            return Response(response.json(), status=response.status_code)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=500)
+
+
+# class MeldWebhookView(APIView):
+#     permission_classes = [IsTrader]  # You can restrict this if needed
+
+#     def post(self, request):
+#         # Validate signature
+#         raw_body = request.body
+#         received_signature = request.headers.get("X-Meld-Signature")
+
+#         computed_signature = hmac.new(
+#             key=MELD_WEBHOOK_SECRET.encode(),
+#             msg=raw_body,
+#             digestmod=hashlib.sha256,
+#         ).hexdigest()
+
+#         if not hmac.compare_digest(received_signature, computed_signature):
+#             return Response({"detail": "Invalid signature"}, status=status.HTTP_400_BAD_REQUEST)
+
+#         data = request.data
+#         event_type = data.get("event")
+#         payment_id = data.get("data", {}).get("paymentId")
+#         status_ = data.get("data", {}).get("status")
+
+#         # TODO: update DB, notify React Native app
+#         print(f"[MELD Webhook] Event: {event_type}, Payment ID: {payment_id}, Status: {status_}")
+
+#         return Response({"detail": "Webhook received"}, status=200)
+    
+class UserTransactionHistory(APIView):
+    permission_classes = [IsTrader]
+
+    def get(self, request):
+        transactions = (
+            Transaction.objects.filter(user=request.user)
+            .order_by('-created_at')
+        )
+        serializer = TransactionSerializer(transactions, many=True)
+        return Response(serializer.data)
+    
+# views.py
+class OnrampWebhookView(APIView):
+    permission_classes = [IsTrader]
+
+    def post(self, request):
+        data = request.data
+        # Example mapping – modify based on Onramp format
+        tx_id = data.get("transactionId")
+        user_id = data.get("metadata", {}).get("user_id")  # optional if attached
+        user = Users.objects.get(id=user_id)
+
+        Transaction.objects.update_or_create(
+            transaction_id=tx_id,
+            defaults={
+                "user": user,
+                "platform": "onramp",
+                "type": data.get("type", "buy"),
+                "crypto_code": data.get("coinCode"),
+                "fiat_code": data.get("fiatCode"),
+                "crypto_amount": data.get("cryptoAmount", 0),
+                "fiat_amount": data.get("fiatAmount", 0),
+                "status": data.get("status"),
+                "created_at": data.get("timestamp"),
+            },
+        )
+        return Response({"detail": "onramp webhook received"}, status=200)
+
+
+class MeldWebhookView(APIView):
+    permission_classes = [IsTrader]
+
+    def post(self, request):
+        data = request.data
+        tx_id = data.get("data", {}).get("paymentId")
+        external_id = data.get("data", {}).get("externalTransactionId")
+        user = Users.objects.get(id=external_id)
+
+        Transaction.objects.update_or_create(
+            transaction_id=tx_id,
+            defaults={
+                "user": user,
+                "platform": "meld",
+                "type": data.get("data", {}).get("type", "buy"),
+                "crypto_code": data.get("data", {}).get("destinationCurrencyCode"),
+                "fiat_code": data.get("data", {}).get("sourceCurrencyCode"),
+                "crypto_amount": data.get("data", {}).get("destinationAmount", 0),
+                "fiat_amount": data.get("data", {}).get("sourceAmount", 0),
+                "status": data.get("data", {}).get("status"),
+                "created_at": data.get("data", {}).get("createdAt"),
+            },
+        )
+        return Response({"detail": "meld webhook received"}, status=200)

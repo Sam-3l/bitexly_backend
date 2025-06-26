@@ -80,6 +80,8 @@ CORS_ALLOW_ALL_ORIGINS = True
 #     "http://localhost:4200",
 # ]
 
+MELD_CRYPTO_API_KEY = "your_meld_api_key_here"
+MELD_WEBHOOK_SECRET = "your_webhook_secret_here"
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',

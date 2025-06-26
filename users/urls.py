@@ -13,5 +13,10 @@ urlpatterns = [
     # path('alltransactionHistory/admin/', AllTransactionsView.as_view(), name="all-transactions"),
     # path('notifications/partner/', NotificationListView.as_view(), name="get-notified"),
     # path('notification/read/', NotificationMarkAsReadView.as_view(), name="mark-read-notification"),
-    path('getDetails/', DetailsView.as_view(), name="partner-details")
+    path('getDetails/', DetailsView.as_view(), name="partner-details"),
+    path("quote/", CreateQuoteView.as_view(), name="meld-create-quote"),
+    path("payment/", CreatePaymentView.as_view(), name="meld-create-payment"),
+    path("meldwebhook/", MeldWebhookView.as_view(), name="meld-webhook"),
+    path("onrampwebhook/", OnrampWebhookView.as_view(), name="onramp-webhook"),
+    path("transactions/", UserTransactionHistory.as_view(), name="user-transaction")
 ]

@@ -115,3 +115,22 @@ class Notification(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.title}"
+
+
+class Transaction(models.Model):
+    PLATFORM_CHOICES = (
+        ('onramp', 'Onramp'),
+        ('meld', 'Meld'),
+    )
+
+    user = models.ForeignKey(Users, on_delete=models.CASCADE)
+    platform = models.CharField(max_length=20, choices=PLATFORM_CHOICES)
+    transaction_id = models.CharField(max_length=128, unique=True)
+    crypto_code = models.CharField(max_length=10)
+    fiat_code = models.CharField(max_length=10)
+    type = models.CharField(max_length=10)  # 'buy' or 'sell'
+    crypto_amount = models.DecimalField(max_digits=20, decimal_places=8)
+    fiat_amount = models.DecimalField(max_digits=20, decimal_places=2)
+    status = models.CharField(max_length=20)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField(auto_now=True)
