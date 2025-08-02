@@ -61,7 +61,7 @@ class Users(AbstractBaseUser, PermissionsMixin):
       referral_code = models.CharField(max_length=10, unique=True, blank=True, null=True)
       referred_by = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='referrals')
       pin_hash = models.CharField(max_length=128, blank=True, null=True) 
-      phone_number = models.PositiveIntegerField(max_length=30, )
+      phone_number = models.PositiveIntegerField(max_length=30, null=True, blank=True )
 
       
       def set_pin(self, raw_pin):
