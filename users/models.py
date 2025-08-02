@@ -41,12 +41,13 @@ class Users(AbstractBaseUser, PermissionsMixin):
         ('trader', 'Trader'),
     )
       email = models.EmailField(max_length=255, unique=True)
-      username = models.CharField(max_length=150,blank=True,null=False)
+      username = models.CharField(max_length=150,blank=True,null=True)
       first_name = models.CharField(max_length=150, blank=True)
       last_name = models.CharField(max_length=150, blank=True)
       password = models.CharField(max_length=128)
       profile_picture = models.ImageField(upload_to='profile_pics/', null=True, blank=True)
-      user_type = models.CharField(max_length=20, choices=USER_TYPE_CHOICES, default="")  
+      user_type = models.CharField(max_length=20, choices=USER_TYPE_CHOICES, default="")
+      username = models.CharField(max_length=150,blank=True,null=True)  
       is_active = models.BooleanField(default=True)
       is_staff = models.BooleanField(default=False)  # Required for admin access
       is_superuser = models.BooleanField(default=False)
@@ -59,7 +60,8 @@ class Users(AbstractBaseUser, PermissionsMixin):
       pin_hash = models.CharField(max_length=128, blank=True, null=True) 
       referral_code = models.CharField(max_length=10, unique=True, blank=True, null=True)
       referred_by = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='referrals')
-      reward_points = models.PositiveIntegerField(default=0)
+      pin_hash = models.CharField(max_length=128, blank=True, null=True) 
+      phone_number = models.PositiveIntegerField(max_length=30, )
 
       
       def set_pin(self, raw_pin):

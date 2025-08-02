@@ -40,6 +40,8 @@ class CompleteRegistrationSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True, required=False)
     referral_code_input = serializers.CharField(write_only=True, required=False)
+    phone_number = serializers.CharField(write_only=True, required=False)
+    country = serializers.CharField(write_only=True, required=False)
 
     def validate(self, data):
         try:
