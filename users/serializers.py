@@ -100,7 +100,7 @@ class CompleteRegistrationSerializer(serializers.Serializer):
 class ProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = Users
-        fields = ['id', 'username', 'email', 'first_name', 'last_name','referral_code']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name','referral_code','phone_number']
 
 class NotificationSerializer(serializers.ModelSerializer):
     class Meta:

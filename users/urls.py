@@ -17,6 +17,9 @@ urlpatterns = [
     path("quote/", CreateQuoteView.as_view(), name="meld-create-quote"),
     path("payment/", CreatePaymentView.as_view(), name="meld-create-payment"),
     path("meldwebhook/", MeldWebhookView.as_view(), name="meld-webhook"),
+    path("moonpay/signature/", MeldWebhookView.as_view(), name="meld-webhook"),
     path("onrampwebhook/", OnrampWebhookView.as_view(), name="onramp-webhook"),
-    path("transactions/", UserTransactionHistory.as_view(), name="user-transaction")
+    path("transactions/", UserTransactionHistory.as_view(), name="user-transaction"),
+    path("get-onramp-url/", OnrampURLView.as_view(), name="get_onramp_url"),
+    path("get-offramp-url/", OfframpURLView.as_view(), name="get_offramp_url"),
 ]

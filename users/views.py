@@ -15,7 +15,61 @@ import requests
 import hmac
 import hashlib
 import json
+from .utils import sign_url
+import base64
 
+class OnrampURLView(APIView):
+    """
+    Generate signed onramp URL
+    """
+    def post(self, request):
+        currency_code = request.data.get("currencyCode")
+        wallet_address = request.data.get("walletAddress")
+        fiat_currency = request.data.get("fiatCurrency")
+        fiat_amount = request.data.get("fiatAmount")
+
+        params = {
+            "apiKey": settings.MOONPAY_PUBLIC_KEY,
+            "currencyCode": currency_code,
+            "walletAddress": wallet_address,
+            "baseCurrencyCode": fiat_currency,
+            "baseCurrencyAmount": fiat_amount,
+        }
+
+        signed_url = sign_url(
+            base_url="https://buy.moonpay.com",
+            params=params,
+            secret_key=settings.MOONPAY_SECRET_KEY
+        )
+
+        return Response({"url": signed_url})
+
+
+class OfframpURLView(APIView):
+    """
+    Generate signed offramp URL
+    """
+    def post(self, request):
+        currency_code = request.data.get("currencyCode")
+        payout_method = request.data.get("payoutMethod")
+        fiat_currency = request.data.get("fiatCurrency")
+        fiat_amount = request.data.get("fiatAmount")
+
+        params = {
+            "apiKey": settings.MOONPAY_PUBLIC_KEY,
+            "currencyCode": currency_code,
+            "payoutMethod": payout_method,
+            "baseCurrencyCode": fiat_currency,
+            "baseCurrencyAmount": fiat_amount,
+        }
+
+        signed_url = sign_url(
+            base_url="https://sell.moonpay.com",
+            params=params,
+            secret_key=settings.MOONPAY_SECRET_KEY
+        )
+
+        return Response({"url": signed_url})
 
 MELD_API_KEY = settings.MELD_CRYPTO_API_KEY
 MELD_WEBHOOK_SECRET = settings.MELD_WEBHOOK_SECRET
@@ -28,6 +82,22 @@ def get_headers():
         "Content-Type": "application/json",
     }
 # Create your views here.
+
+
+class MoonPaySignatureAPIView(APIView):
+    def post(self, request):
+        url_to_sign = request.data.get("url")
+        if not url_to_sign:
+            return Response({"error": "Missing URL"}, status=400)
+
+        secret_key_bytes = settings.MOONPAY_API_SECRET.encode("utf-8")
+        message_bytes = url_to_sign.encode("utf-8")
+
+        signature = base64.b64encode(
+            hmac.new(secret_key_bytes, message_bytes, hashlib.sha256).digest()
+        ).decode("utf-8")
+
+        return Response({"signature": signature})
 
 
 # Partners SignUp   
@@ -330,6 +400,7 @@ class UpdateProfileView(APIView):
         last_name = request.data.get('last_name')
         # email = request.data.get('email')
         profile_picture = request.data.get('profile_picture')  # optional
+        phone_number = request.data.get('phone_number')
 
         # Update fields only if they are present
         if username:
@@ -338,6 +409,8 @@ class UpdateProfileView(APIView):
             user.first_name = first_name
         if last_name:
             user.last_name = last_name
+        if phone_number:
+            user.phone_number = phone_number
         if profile_picture:
           if profile_picture.content_type not in ['image/jpeg', 'image/png']:
               return Response({'detail': 'Only JPEG or PNG images are allowed.'}, status=400)

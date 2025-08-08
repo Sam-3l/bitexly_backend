@@ -50,3 +50,19 @@ class SecureActionMixin:
         if not user.pin_hash or not user.check_pin(pin):
             return False, Response({'detail': 'Invalid PIN.'}, status=status.HTTP_403_FORBIDDEN)
         return True, None
+
+import hmac
+import base64
+from hashlib import sha256
+from urllib.parse import urlencode
+
+def sign_url(base_url, params, secret_key):
+    query_string = urlencode(params)
+    signature = hmac.new(
+        key=secret_key.encode("utf-8"),
+        msg=query_string.encode("utf-8"),
+        digestmod=sha256
+    ).digest()
+    signature_b64 = base64.b64encode(signature).decode("utf-8")
+
+    return f"{base_url}?{query_string}&signature={signature_b64}"

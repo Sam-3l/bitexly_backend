@@ -83,6 +83,13 @@ CORS_ALLOW_ALL_ORIGINS = True
 MELD_CRYPTO_API_KEY = "your_meld_api_key_here"
 MELD_WEBHOOK_SECRET = "your_webhook_secret_here"
 
+# MOONPAY_PUBLIC_KEY = os.getenv("MOONPAY_PUBLIC_KEY")
+# MOONPAY_SECRET_KEY = os.getenv("MOONPAY_SECRET_KEY")
+
+
+MOONPAY_PUBLIC_KEY = os.getenv("MOONPAY_PUBLIC_KEY")
+MOONPAY_SECRET_KEY = os.getenv("MOONPAY_SECRET_KEY")
+
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
