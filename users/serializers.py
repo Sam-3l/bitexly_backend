@@ -72,6 +72,10 @@ class CompleteRegistrationSerializer(serializers.Serializer):
     def save(self):
         referral_code_input = self.validated_data.get('referral_code_input', None)
         user = self.validated_data['user']
+        # update fields
+        user.phone_number = self.validated_data.get('phone_number', user.phone_number)
+        user.country = self.validated_data.get('country', user.country)
+
         updated_fields = []
 
         if referral_code_input and not user.referred_by:
