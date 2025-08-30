@@ -34,54 +34,113 @@ class UserManager(BaseUserManager):
         return self.create_user(email, password, **extra_fields)
 
 
-class Users(AbstractBaseUser, PermissionsMixin):
-      USER_TYPE_CHOICES = (
-        ('admin', 'Admin'),
-        # ('driver', 'Driver'),
-        ('trader', 'Trader'),
-    )
-      email = models.EmailField(max_length=255, unique=True)
-      username = models.CharField(max_length=150,blank=True,null=True)
-      first_name = models.CharField(max_length=150, blank=True)
-      last_name = models.CharField(max_length=150, blank=True)
-      password = models.CharField(max_length=128)
-      profile_picture = models.ImageField(upload_to='profile_pics/', null=True, blank=True)
-      user_type = models.CharField(max_length=20, choices=USER_TYPE_CHOICES, default="")
-      username = models.CharField(max_length=150,blank=True,null=True)  
-      is_active = models.BooleanField(default=True)
-      is_staff = models.BooleanField(default=False)  # Required for admin access
-      is_superuser = models.BooleanField(default=False)
-      is_email_verified = models.BooleanField(default=False)
-      unverified_email = models.EmailField(null=True, blank=True, unique=True)
-      email_otp = models.CharField(max_length=4, blank=True, null=True)
-      otp_created_at = models.DateTimeField(blank=True, null=True)
-      reset_otp = models.CharField(max_length=4, blank=True, null=True)
-      reset_otp_expiry = models.DateTimeField(null=True, blank=True)
-      pin_hash = models.CharField(max_length=128, blank=True, null=True) 
-      referral_code = models.CharField(max_length=10, unique=True, blank=True, null=True)
-      referred_by = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='referrals')
-      pin_hash = models.CharField(max_length=128, blank=True, null=True) 
-      phone_number = models.PositiveIntegerField(max_length=30, null=True, blank=True )
+# class Users(AbstractBaseUser, PermissionsMixin):
+#       USER_TYPE_CHOICES = (
+#         ('admin', 'Admin'),
+#         # ('driver', 'Driver'),
+#         ('trader', 'Trader'),
+#     )
+#       email = models.EmailField(max_length=255, unique=True)
+#       username = models.CharField(max_length=150,blank=True,null=True)
+#       first_name = models.CharField(max_length=150, blank=True)
+#       last_name = models.CharField(max_length=150, blank=True)
+#       password = models.CharField(max_length=128)
+#       profile_picture = models.ImageField(upload_to='profile_pics/', null=True, blank=True)
+#       user_type = models.CharField(max_length=20, choices=USER_TYPE_CHOICES, default="")
+#       username = models.CharField(max_length=150,blank=True,null=True)  
+#       is_active = models.BooleanField(default=True)
+#       is_staff = models.BooleanField(default=False)  # Required for admin access
+#       is_superuser = models.BooleanField(default=False)
+#       is_email_verified = models.BooleanField(default=False)
+#       unverified_email = models.EmailField(null=True, blank=True, unique=True)
+#       email_otp = models.CharField(max_length=4, blank=True, null=True)
+#       otp_created_at = models.DateTimeField(blank=True, null=True)
+#       reset_otp = models.CharField(max_length=4, blank=True, null=True)
+#       reset_otp_expiry = models.DateTimeField(null=True, blank=True)
+#       pin_hash = models.CharField(max_length=128, blank=True, null=True) 
+#       referral_code = models.CharField(max_length=10, unique=True, blank=True, null=True)
+#       referred_by = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='referrals')
+#       pin_hash = models.CharField(max_length=128, blank=True, null=True) 
+#       phone_number = models.PositiveIntegerField(null=True, blank=True )
 
       
-      def set_pin(self, raw_pin):
-          self.pin_hash = make_password(raw_pin)
+#       def set_pin(self, raw_pin):
+#           self.pin_hash = make_password(raw_pin)
   
-      def check_pin(self, raw_pin):
-          return check_password(raw_pin, self.pin_hash)
+#       def check_pin(self, raw_pin):
+#           return check_password(raw_pin, self.pin_hash)
       
-      def save(self, *args, **kwargs):
+#       def save(self, *args, **kwargs):
+#         if not self.referral_code:
+#             self.referral_code = str(uuid.uuid4()).replace('-', '')[:10].upper()
+#         super().save(*args, **kwargs)
+  
+#       objects = UserManager()
+  
+#       USERNAME_FIELD = 'email'
+#       REQUIRED_FIELDS = ['username']
+  
+#       def __str__(self):
+#           return self.email
+      
+
+class Users(AbstractBaseUser, PermissionsMixin):
+    USER_TYPE_CHOICES = (
+        ('admin', 'Admin'),
+        ('trader', 'Trader'),
+    )
+
+    email = models.EmailField(max_length=255, unique=True)
+    username = models.CharField(max_length=150, blank=True, null=True)
+    first_name = models.CharField(max_length=150, blank=True)
+    last_name = models.CharField(max_length=150, blank=True)
+    password = models.CharField(max_length=128)
+    profile_picture = models.ImageField(upload_to='profile_pics/', null=True, blank=True)
+
+    user_type = models.CharField(max_length=20, choices=USER_TYPE_CHOICES, default="trader")
+
+    is_active = models.BooleanField(default=True)
+    is_staff = models.BooleanField(default=False)
+    is_superuser = models.BooleanField(default=False)
+    is_email_verified = models.BooleanField(default=False)
+
+    unverified_email = models.EmailField(null=True, blank=True, unique=True)
+    email_otp = models.CharField(max_length=4, blank=True, null=True)
+    otp_created_at = models.DateTimeField(blank=True, null=True)
+
+    reset_otp = models.CharField(max_length=4, blank=True, null=True)
+    reset_otp_expiry = models.DateTimeField(null=True, blank=True)
+
+    pin_hash = models.CharField(max_length=128, blank=True, null=True)
+
+    referral_code = models.CharField(max_length=10, unique=True, blank=True, null=True)
+    referred_by = models.ForeignKey(
+        'self', on_delete=models.SET_NULL, null=True, blank=True, related_name='referrals'
+    )
+
+    phone_number = models.CharField(max_length=20, null=True, blank=True, unique=True)
+
+    def set_pin(self, raw_pin):
+        self.pin_hash = make_password(raw_pin)
+
+    def check_pin(self, raw_pin):
+        return check_password(raw_pin, self.pin_hash)
+
+    def save(self, *args, **kwargs):
         if not self.referral_code:
-            self.referral_code = str(uuid.uuid4()).replace('-', '')[:10].upper()
+            code = str(uuid.uuid4()).replace('-', '')[:10].upper()
+            while Users.objects.filter(referral_code=code).exists():
+                code = str(uuid.uuid4()).replace('-', '')[:10].upper()
+            self.referral_code = code
         super().save(*args, **kwargs)
-  
-      objects = UserManager()
-  
-      USERNAME_FIELD = 'email'
-      REQUIRED_FIELDS = ['username']
-  
-      def __str__(self):
-          return self.email
+
+    objects = UserManager()
+
+    USERNAME_FIELD = 'email'
+    REQUIRED_FIELDS = []  # no extra required fields for createsuperuser
+
+    def __str__(self):
+        return self.email
     
 class EmailOTP(models.Model):
     user = models.ForeignKey(Users, on_delete=models.CASCADE)
