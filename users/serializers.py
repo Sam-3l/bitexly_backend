@@ -35,7 +35,7 @@ class SignUpSerializer(serializers.ModelSerializer):
         )
         print("saved")
         return user
-    
+      
 class CompleteRegistrationSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True, required=False)
@@ -79,14 +79,16 @@ class CompleteRegistrationSerializer(serializers.Serializer):
         updated_fields = []
 
             
-        # Update phone_number
-        if 'phone_number' in self.validated_data:
-            user.phone_number = self.validated_data['phone_number']
+            # Update phone_number
+        phone_number = self.validated_data.get('phone_number')
+        if phone_number:
+            user.phone_number = phone_number
             updated_fields.append('phone_number')
 
         # Update country
-        if 'country' in self.validated_data:
-            user.country = self.validated_data['country']
+        country = self.validated_data.get('country')
+        if country:
+            user.country = country
             updated_fields.append('country')
 
         if referral_code_input and not user.referred_by:
