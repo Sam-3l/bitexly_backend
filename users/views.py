@@ -1,6 +1,7 @@
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from services.changely_service import ApiException, ApiService
 from .models import Users, EmailOTP, Transaction
 from drf_yasg.utils import swagger_auto_schema
 from .serializers import SignUpSerializer, CompleteRegistrationSerializer, TransactionSerializer, ResetPasswordOTPSerializer, ProfileSerializer
@@ -18,7 +19,7 @@ import json
 from .utils import sign_url
 import base64
 
-class OnrampURLView(APIView):
+class MoonPayOnrampURLView(APIView):
     """
     Generate signed onramp URL
     """
@@ -750,3 +751,31 @@ class MeldWebhookView(APIView):
             },
         )
         return Response({"detail": "meld webhook received"}, status=200)
+
+
+
+api = ApiService(
+    url="https://api.changelly.com/v2/",
+    private_key="<<YOUR_PRIVATE_KEY_HEX>>",
+    x_api_key="<<YOUR_PUBLIC_KEY_HASH_BASE64>>",
+)
+
+class GetPairsParamsView(APIView):
+    """
+    POST { "from": "eth", "to": "btc" }
+    """
+
+    def post(self, request):
+        currency_from = request.data.get("from")
+        currency_to = request.data.get("to")
+
+        if not currency_from or not currency_to:
+            return Response({"error": "Both 'from' and 'to' are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            result = api.get_pairs_params(currency_from, currency_to)
+            return Response(result, status=status.HTTP_200_OK)
+        except ApiException as e:
+            return Response({"error": e.message, "code": e.code}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

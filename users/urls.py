@@ -20,6 +20,8 @@ urlpatterns = [
     path("moonpay/signature/", MeldWebhookView.as_view(), name="meld-webhook"),
     path("onrampwebhook/", OnrampWebhookView.as_view(), name="onramp-webhook"),
     path("transactions/", UserTransactionHistory.as_view(), name="user-transaction"),
-    path("get-onramp-url/", OnrampURLView.as_view(), name="get_onramp_url"),
+    # path("get-onramp-url/", OnrampURLView.as_view(), name="get_onramp_url"),
     path("get-offramp-url/", OfframpURLView.as_view(), name="get_offramp_url"),
+    path("changelly/pairs/", GetPairsParamsView.as_view(), name="changelly_pairs"),
+
 ]
