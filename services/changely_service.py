@@ -60,3 +60,22 @@ class ApiService:
 
     def get_pairs_params(self, currency_from: str, currency_to: str):
         return self._request('getPairsParams', params=[{'from': currency_from, 'to': currency_to}])
+
+
+    def get_currencies(self):
+        return self._request("getCurrencies")
+
+    def get_exchange_amount(self, from_currency: str, to_currency: str, amount: str):
+        return self._request("getExchangeAmount", params=[{
+            "from": from_currency,
+            "to": to_currency,
+            "amount": amount
+        }])
+
+    def create_transaction(self, from_currency: str, to_currency: str, address: str, amount: str):
+        return self._request("createTransaction", params=[{
+            "from": from_currency,
+            "to": to_currency,
+            "address": address,
+            "amount": amount
+        }])

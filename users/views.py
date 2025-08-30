@@ -779,3 +779,47 @@ class GetPairsParamsView(APIView):
             return Response({"error": e.message, "code": e.code}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class GetCurrenciesView(APIView):
+    """ GET all available currencies """
+    def get(self, request):
+        try:
+            result = api.get_currencies()
+            return Response(result, status=status.HTTP_200_OK)
+        except ApiException as e:
+            return Response({"error": e.message, "code": e.code}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class GetExchangeAmountView(APIView):
+    """ POST { "from": "eth", "to": "btc", "amount": "1" } """
+    def post(self, request):
+        from_currency = request.data.get("from")
+        to_currency = request.data.get("to")
+        amount = request.data.get("amount")
+
+        if not (from_currency and to_currency and amount):
+            return Response({"error": "'from', 'to', and 'amount' required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            result = api.get_exchange_amount(from_currency, to_currency, amount)
+            return Response(result, status=status.HTTP_200_OK)
+        except ApiException as e:
+            return Response({"error": e.message, "code": e.code}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CreateTransactionView(APIView):
+    """ POST { "from": "eth", "to": "btc", "address": "btc_wallet_address", "amount": "1" } """
+    def post(self, request):
+        from_currency = request.data.get("from")
+        to_currency = request.data.get("to")
+        address = request.data.get("address")
+        amount = request.data.get("amount")
+
+        if not (from_currency and to_currency and address and amount):
+            return Response({"error": "'from', 'to', 'address', 'amount' required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            result = api.create_transaction(from_currency, to_currency, address, amount)
+            return Response(result, status=status.HTTP_200_OK)
+        except ApiException as e:
+            return Response({"error": e.message, "code": e.code}, status=status.HTTP_400_BAD_REQUEST)
