@@ -119,15 +119,26 @@ API_SECRET = "az0xu2gihjl1hbwm"  # keep secret safe
     # x_api_key="",
 
 
+# def sign_request(message: dict):
+#     msg_json = json.dumps(message)
+#     signature = hmac.new(
+#         API_SECRET.encode(),
+#         msg_json.encode(),
+#         hashlib.sha512
+#     ).hexdigest()
+#     return signature, msg_json
+
 def sign_request(message: dict):
-    msg_json = json.dumps(message)
+    # Compact JSON: separators=(',', ':')
+    msg_json = json.dumps(message, separators=(',', ':'))
+    
     signature = hmac.new(
         API_SECRET.encode(),
         msg_json.encode(),
         hashlib.sha512
     ).hexdigest()
+    
     return signature, msg_json
-
 
 # def changelly_request(method, params=None):
 #     params = params or {}
@@ -168,7 +179,7 @@ def changelly_request(method, params=None):
     }
 
     # ✅ FIX: use json= instead of data=
-    response = requests.post(API_URL, headers=headers, json=msg_obj)
+    response = requests.post(API_URL, headers=headers, data=msg_obj)
 
     try:
         return response.json()
