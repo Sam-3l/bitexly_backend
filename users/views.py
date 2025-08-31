@@ -810,36 +810,68 @@ class GetExchangeAmountView(APIView):
     """
     POST { "from": "eth", "to": "btc", "amount": "1" }
     """
-    def post(self, request):
-        from_currency = request.data.get("from")
-        to_currency = request.data.get("to")
-        amount = request.data.get("amount")
+    # def post(self, request):
+    #     from_currency = request.data.get("from")
+    #     to_currency = request.data.get("to")
+    #     amount = request.data.get("amount")
 
-        if not from_currency or not to_currency or not amount:
-            return Response(
-                {"error": "'from', 'to', and 'amount' are required"},
-                status=status.HTTP_400_BAD_REQUEST
+    #     if not from_currency or not to_currency or not amount:
+    #         return Response(
+    #             {"error": "'from', 'to', and 'amount' are required"},
+    #             status=status.HTTP_400_BAD_REQUEST
+    #         )
+
+    #     try:
+    #         # normalize & validate
+    #         from_currency = from_currency.lower()
+    #         to_currency = to_currency.lower()
+    #         amount_str = str(amount)
+
+    #         result = api.get_exchange_amount(from_currency, to_currency, amount_str)
+    #         return Response(result, status=status.HTTP_200_OK)
+
+    #     except ApiException as e:
+    #         return Response(
+    #             {"error": e.message, "code": e.code},
+    #             status=status.HTTP_400_BAD_REQUEST
+    #         )
+    #     except Exception as e:
+    #         return Response(
+    #             {"error": str(e)},
+    #             status=status.HTTP_500_INTERNAL_SERVER_ERROR
+    #         )
+
+    def post(self, request):
+        try:
+            from_currency = request.data.get("from")
+            to_currency = request.data.get("to")
+            amount = request.data.get("amount")
+
+            if not all([from_currency, to_currency, amount]):
+                return Response(
+                    {"error": "from, to, and amount are required"},
+                    status=400
+                )
+
+            result = api.get_exchange_amount(
+                from_currency=from_currency,
+                to_currency=to_currency,
+                amount=str(amount)
             )
 
-        try:
-            # normalize & validate
-            from_currency = from_currency.lower()
-            to_currency = to_currency.lower()
-            amount_str = str(amount)
-
-            result = api.get_exchange_amount(from_currency, to_currency, amount_str)
-            return Response(result, status=status.HTTP_200_OK)
+            return Response(result, status=200)
 
         except ApiException as e:
+            # catch Changelly API errors
             return Response(
-                {"error": e.message, "code": e.code},
-                status=status.HTTP_400_BAD_REQUEST
+                {"error": f"Changelly API error: {e}"},
+                status=400
             )
         except Exception as e:
-            return Response(
-                {"error": str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            import traceback
+            traceback.print_exc()
+            return Response({"error": str(e)}, status=500)
+
 
 
 class CreateTransactionView(APIView):
