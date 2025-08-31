@@ -1,7 +1,7 @@
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from services.changely_service import ApiException, ApiService
+from services.changely_service import ApiException, ApiService, changelly_request
 from .models import Users, EmailOTP, Transaction
 from drf_yasg.utils import swagger_auto_schema
 from .serializers import SignUpSerializer, CompleteRegistrationSerializer, TransactionSerializer, ResetPasswordOTPSerializer, ProfileSerializer
@@ -890,3 +890,26 @@ class CreateTransactionView(APIView):
             return Response(result, status=status.HTTP_200_OK)
         except ApiException as e:
             return Response({"error": e.message, "code": e.code}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ChangellyExchangeAmountView(APIView):
+    def post(self, request):
+        from_currency = request.data.get("from")
+        to_currency = request.data.get("to")
+        amount = request.data.get("amount")
+
+        if not (from_currency and to_currency and amount):
+            return Response(
+                {"error": "from, to, and amount are required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            result = changelly_request("getExchangeAmount", {
+                "from": from_currency,
+                "to": to_currency,
+                "amount": amount
+            })
+            return Response(result, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
