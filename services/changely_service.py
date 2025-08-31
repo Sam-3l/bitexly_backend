@@ -185,5 +185,5 @@ def changelly_request(method, params=None):
         return response.json()
     except Exception:
         # Debug output
-        print("Changelly RAW RESPONSE:", response.text)
-        return {"error": response.text, "status_code": response.status_code}
+        print("Changelly RAW RESPONSE:", response)
+        return {"error": response, "status_code": response.status_code}
