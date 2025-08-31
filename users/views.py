@@ -906,7 +906,7 @@ class ChangellyExchangeAmountView(APIView):
             result = changelly_request("getExchangeAmount", {
                 "from": from_currency,
                 "to": to_currency,
-                "amount": amount
+                "amountFrom": amount
             })
             return Response(result, status=status.HTTP_200_OK)
         except Exception as e:
