@@ -129,24 +129,24 @@ def sign_request(message: dict):
     return signature, msg_json
 
 
-def changelly_request(method, params=None):
-    params = params or {}
-    message = {
-        "jsonrpc": "2.0",
-        "id": "test",
-        "method": method,
-        "params": params
-    }
-    signature, msg_json = sign_request(message)
+# def changelly_request(method, params=None):
+#     params = params or {}
+#     message = {
+#         "jsonrpc": "2.0",
+#         "id": "test",
+#         "method": method,
+#         "params": params
+#     }
+#     signature, msg_json = sign_request(message)
 
-    headers = {
-        "api-key": API_KEY,
-        "sign": signature,
-        "Content-Type": "application/json"
-    }
+#     headers = {
+#         "api-key": API_KEY,
+#         "sign": signature,
+#         "Content-Type": "application/json"
+#     }
 
-    response = requests.post(API_URL, headers=headers, data=msg_json)
-    return response.json()
+#     response = requests.post(API_URL, headers=headers, data=msg_json)
+#     return response.json()
 
 
 
