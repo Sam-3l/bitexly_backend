@@ -173,8 +173,8 @@ def changelly_request(method, params=None):
     signature, msg_obj = sign_request(message)
 
     headers = {
-        "api-key": API_KEY,
-        "sign": signature,
+        "X-Api-Key": API_KEY,
+        "X-Api-Signature": signature,
         "Content-Type": "application/json"
     }
 
