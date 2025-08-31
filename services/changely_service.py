@@ -112,7 +112,7 @@ import hashlib
 import requests
 from django.conf import settings
 
-API_URL = "https://api.changelly.com"
+API_URL = "https://api.changelly.com/v2"
 API_KEY = "DczA8A5tyxtHVg9DQO6u7qLs6ueyg5B7zwoyr6ovJRI="
 API_SECRET = "az0xu2gihjl1hbwm"  # keep secret safe
     # private_key="",
@@ -147,3 +147,32 @@ def changelly_request(method, params=None):
 
     response = requests.post(API_URL, headers=headers, data=msg_json)
     return response.json()
+
+
+
+
+def changelly_request(method, params=None):
+    params = params or {}
+    message = {
+        "jsonrpc": "2.0",
+        "id": "test",
+        "method": method,
+        "params": params
+    }
+    signature, msg_obj = sign_request(message)
+
+    headers = {
+        "api-key": API_KEY,
+        "sign": signature,
+        "Content-Type": "application/json"
+    }
+
+    # ✅ FIX: use json= instead of data=
+    response = requests.post(API_URL, headers=headers, json=msg_obj)
+
+    try:
+        return response.json()
+    except Exception:
+        # Debug output
+        print("Changelly RAW RESPONSE:", response.text)
+        return {"error": response.text, "status_code": response.status_code}
