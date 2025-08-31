@@ -22,9 +22,9 @@ urlpatterns = [
     path("transactions/", UserTransactionHistory.as_view(), name="user-transaction"),
     # path("get-onramp-url/", OnrampURLView.as_view(), name="get_onramp_url"),
     path("get-offramp-url/", OfframpURLView.as_view(), name="get_offramp_url"),
-    path("changelly/pairs/", GetPairsParamsView.as_view(), name=""),
-    path("changelly/currencies/", GetCurrenciesView.as_view(), name=""),
-    path("changelly/exchange-amount/", GetExchangeAmountView.as_view(), name=""),
-    path("changelly/create-transaction/", CreateTransactionView.as_view(), name=""), 
+    # path("changelly/pairs/", GetPairsParamsView.as_view(), name=""),
+    # path("changelly/currencies/", GetCurrenciesView.as_view(), name=""),
+    # path("changelly/exchange-amount/", GetExchangeAmountView.as_view(), name=""),
+    # path("changelly/create-transaction/", CreateTransactionView.as_view(), name=""), 
     path("api/changelly/exchange-amount/", ChangellyExchangeAmountView.as_view(), name="changelly-exchange-amount"),
 ]
