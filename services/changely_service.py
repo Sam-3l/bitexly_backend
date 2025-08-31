@@ -26,7 +26,7 @@ class ApiService:
         self.private_key = private_key
         self.x_api_key = x_api_key
 
-    def _request(self, method: str, params: dict or list = None) -> Response or List[dict]: # type: ignore
+    def _request(self, method: str, params: dict or list = None) -> Response or List[dict]:
         params = params if params else {}
         message = {
             'jsonrpc': '2.0',
@@ -51,14 +51,28 @@ class ApiService:
     #     h = SHA256.new(message)
     #     signature = pkcs1_15.new(private_key).sign(h)
     #     return base64.b64encode(signature)
-    def _sign_request(self, body):
-        message = json.dumps(body)
-        signature = hmac.new(
-            self.private_key.encode('utf-8'),  # use private key directly
-            message.encode('utf-8'),
-            hashlib.sha512
-        ).hexdigest()
-        return signature
+    # def _sign_request(self, body):
+    #     message = json.dumps(body)
+    #     signature = hmac.new(
+    #         self.private_key.encode('utf-8'),  # use private key directly
+    #         message.encode('utf-8'),
+    #         hashlib.sha512
+    #     ).hexdigest()
+    #     return signature
+    def _sign_request(self, body: dict) -> str:
+        # Encode private key (hex to binary if needed)
+        decoded_private_key = binascii.unhexlify(self.private_key)
+        private_key = RSA.import_key(decoded_private_key)
+
+        # Make sure JSON is consistently encoded
+        message = json.dumps(body, separators=(',', ':'), sort_keys=True).encode('utf-8')
+
+        # Sign with SHA256 + PKCS1 v1.5
+        h = SHA256.new(message)
+        signature = pkcs1_15.new(private_key).sign(h)
+
+        # Return base64 string
+        return base64.b64encode(signature).decode()
 
     def _get_headers(self, body: dict) -> dict:
         signature = self._sign_request(body)
@@ -67,6 +81,7 @@ class ApiService:
             'X-Api-Key': self.x_api_key,
             'X-Api-Signature': signature,
         }
+    
 
     def get_pairs_params(self, currency_from: str, currency_to: str):
         return self._request('getPairsParams', params=[{'from': currency_from, 'to': currency_to}])
