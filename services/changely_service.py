@@ -1,5 +1,7 @@
 import base64
 import binascii
+import hashlib
+import hmac
 import json
 import logging
 from typing import List
@@ -24,7 +26,7 @@ class ApiService:
         self.private_key = private_key
         self.x_api_key = x_api_key
 
-    def _request(self, method: str, params: dict or list = None) -> Response or List[dict]:
+    def _request(self, method: str, params: dict or list = None) -> Response or List[dict]: # type: ignore
         params = params if params else {}
         message = {
             'jsonrpc': '2.0',
@@ -42,13 +44,21 @@ class ApiService:
             return response_body['result']
         raise ApiException(response.status_code, response.text)
 
-    def _sign_request(self, body: dict) -> bytes:
-        decoded_private_key = binascii.unhexlify(self.private_key)
-        private_key = RSA.import_key(decoded_private_key)
-        message = json.dumps(body).encode('utf-8')
-        h = SHA256.new(message)
-        signature = pkcs1_15.new(private_key).sign(h)
-        return base64.b64encode(signature)
+    # def _sign_request(self, body: dict) -> bytes:
+    #     decoded_private_key = binascii.unhexlify(self.private_key)
+    #     private_key = RSA.import_key(decoded_private_key)
+    #     message = json.dumps(body).encode('utf-8')
+    #     h = SHA256.new(message)
+    #     signature = pkcs1_15.new(private_key).sign(h)
+    #     return base64.b64encode(signature)
+    def _sign_request(self, body):
+        message = json.dumps(body)
+        signature = hmac.new(
+            self.private_key.encode('utf-8'),  # use private key directly
+            message.encode('utf-8'),
+            hashlib.sha512
+        ).hexdigest()
+        return signature
 
     def _get_headers(self, body: dict) -> dict:
         signature = self._sign_request(body)
