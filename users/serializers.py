@@ -91,15 +91,17 @@ class CompleteRegistrationSerializer(serializers.Serializer):
             user.country = country
             updated_fields.append('country')
 
+
         if referral_code_input and not user.referred_by:
             try:
                 referrer = Users.objects.get(referral_code=referral_code_input)
                 user.referred_by = referrer
-                referrer.reward_points += 100  # Customize your reward logic
+                referrer.reward_points += 100  # reward logic
                 referrer.save(update_fields=['reward_points'])
                 updated_fields.append('referred_by')
             except Users.DoesNotExist:
-                pass  # You may also raise a validation error here
+                raise serializers.ValidationError({"referral_code_input": "Invalid referral code"})
+
 
 
         # if 'username' in self.validated_data:
@@ -109,8 +111,10 @@ class CompleteRegistrationSerializer(serializers.Serializer):
         if 'password' in self.validated_data:
             user.set_password(self.validated_data['password'])
             updated_fields.append('password')
-
-        user.save(update_fields=updated_fields)
+        if updated_fields:
+            user.save(update_fields=updated_fields)
+        else:
+            user.save()
         return user
     
 
