@@ -119,6 +119,7 @@ class Users(AbstractBaseUser, PermissionsMixin):
     )
 
     phone_number = models.CharField(max_length=20, null=True, blank=True, unique=True)
+    country = models.CharField(max_length=20, null=True, blank=True, unique=True)
 
     def set_pin(self, raw_pin):
         self.pin_hash = make_password(raw_pin)
