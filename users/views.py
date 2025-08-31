@@ -756,8 +756,8 @@ class MeldWebhookView(APIView):
 
 api = ApiService(
     url="https://api.changelly.com/v2/",
-    private_key="DczA8A5tyxtHVg9DQO6u7qLs6ueyg5B7zwoyr6ovJRI=",
-    x_api_key="az0xu2gihjl1hbwm",
+    private_key="az0xu2gihjl1hbwm",
+    x_api_key="DczA8A5tyxtHVg9DQO6u7qLs6ueyg5B7zwoyr6ovJRI=",
 )
 
 class GetPairsParamsView(APIView):
