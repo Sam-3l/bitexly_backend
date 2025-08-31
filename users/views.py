@@ -1,7 +1,7 @@
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from services.changely_service import ApiException, ApiService, changelly_request
+from services.changely_service import changelly_request
 from .models import Users, EmailOTP, Transaction
 from drf_yasg.utils import swagger_auto_schema
 from .serializers import SignUpSerializer, CompleteRegistrationSerializer, TransactionSerializer, ResetPasswordOTPSerializer, ProfileSerializer
