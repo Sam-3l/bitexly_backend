@@ -113,8 +113,10 @@ import requests
 from django.conf import settings
 
 API_URL = "https://api.changelly.com"
-API_KEY = "YOUR_API_KEY"
-API_SECRET = "YOUR_API_SECRET"  # keep secret safe
+API_KEY = "DczA8A5tyxtHVg9DQO6u7qLs6ueyg5B7zwoyr6ovJRI="
+API_SECRET = "az0xu2gihjl1hbwm"  # keep secret safe
+    # private_key="",
+    # x_api_key="",
 
 
 def sign_request(message: dict):
