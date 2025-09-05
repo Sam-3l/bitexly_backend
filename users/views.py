@@ -1,3 +1,4 @@
+import time
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -906,8 +907,69 @@ class ChangellyExchangeAmountView(APIView):
             result = changelly_request("getExchangeAmount", {
                 "from": from_currency,
                 "to": to_currency,
-                "amountFrom": amount
+                "amount": amount
             })
             return Response(result, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+# Better: put these in settings.py and load from env
+API_KEY = "vOKI8sWuZdFUXJJAFHQ7E3z8J9UxEg"
+API_SECRET = "EIqo4GYwsteDj4bw5RxZy0ryRFmZwAec"
+
+
+class QuoteAPIView(APIView):
+    def post(self, request):
+        try:
+            data = request.data  # JSON body from frontend
+            fiatType = data.get('fiatType', 1)
+
+            if (fiatType == 1):
+                body ={
+                'coinId': data.get('coinId', 54),
+                'coinCode': data.get('coinCode', "usdt"),
+                'chainId': data.get('chainId', 3),
+                'network': data.get('network', "bep20"),
+                'quantity': data.get('quantity', 3),
+                # 'fiatAmount': data.get('quantity', 2),
+                'fiatType': data.get('fiatType', 1),
+                'type': data.get('type', 2),}
+            else:
+                body= {
+                'coinId': data.get('coinId', 54),
+                'coinCode': data.get('coinCode', "usdt"),
+                'chainId': data.get('chainId', 3),
+                'network': data.get('network', "bep20"),
+                # 'quantity': data.get('quantity', 4),
+                'fiatAmount': data.get('fiatAmout', 200),
+                'fiatType': data.get('fiatType', 1),
+                'type': data.get('type', 1),
+            }
+            
+
+
+            payload = {
+                "timestamp": int(time.time() * 1000),
+                "body": body
+            }
+
+            encoded_payload = base64.b64encode(json.dumps(payload).encode()).decode()
+            signature = hmac.new(
+                API_SECRET.encode(), encoded_payload.encode(), hashlib.sha512
+            ).hexdigest()
+
+            headers = {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json;charset=UTF-8',
+                'X-ONRAMP-SIGNATURE': signature,
+                'X-ONRAMP-APIKEY': API_KEY,
+                'X-ONRAMP-PAYLOAD': encoded_payload
+            }
+
+            url = 'https://api.onramp.money/onramp/api/v2/common/transaction/quotes'
+            response = requests.post(url, headers=headers, data=json.dumps(body))
+
+            return Response(response.json(), status=response.status_code)
+
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
