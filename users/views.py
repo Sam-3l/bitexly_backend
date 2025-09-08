@@ -2,7 +2,8 @@ import time
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from services.changely_service import changelly_request
+# from services.changely_service import changelly_request
+from services.changely_service import api
 from .models import Users, EmailOTP, Transaction
 from drf_yasg.utils import swagger_auto_schema
 from .serializers import SignUpSerializer, CompleteRegistrationSerializer, TransactionSerializer, ResetPasswordOTPSerializer, ProfileSerializer
@@ -904,12 +905,13 @@ class ChangellyExchangeAmountView(APIView):
             )
 
         try:
-            result = changelly_request("getExchangeAmount", {
-                "from": from_currency,
-                "to": to_currency,
-                "amount": amount
-            })
-            return Response(result, status=status.HTTP_200_OK)
+            # result = changelly_request("getExchangeAmount", {
+            #     "from": from_currency,
+            #     "to": to_currency,
+            #     "amount": amount
+            # })
+            result = api.get_convert(from_currency, to_currency, amount)
+            return Response(status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
@@ -927,21 +929,21 @@ class QuoteAPIView(APIView):
             if (fiatType == 1):
                 body ={
                 'coinId': data.get('coinId', 54),
-                'coinCode': data.get('coinCode', "usdt"),
+                'coinCode': data.get('coinCode'),
                 'chainId': data.get('chainId', 3),
                 'network': data.get('network', "bep20"),
-                'quantity': data.get('quantity', 3),
+                'quantity': data.get('quantity'),
                 # 'fiatAmount': data.get('quantity', 2),
                 'fiatType': data.get('fiatType', 1),
                 'type': data.get('type', 2),}
             else:
                 body= {
                 'coinId': data.get('coinId', 54),
-                'coinCode': data.get('coinCode', "usdt"),
+                'coinCode': data.get('coinCode'),
                 'chainId': data.get('chainId', 3),
                 'network': data.get('network', "bep20"),
                 # 'quantity': data.get('quantity', 4),
-                'fiatAmount': data.get('fiatAmout', 200),
+                'fiatAmount': data.get('fiatAmout'),
                 'fiatType': data.get('fiatType', 1),
                 'type': data.get('type', 1),
             }
