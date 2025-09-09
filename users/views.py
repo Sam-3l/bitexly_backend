@@ -970,7 +970,7 @@ class QuoteAPIView(APIView):
                 'quantity': data.get('quantity'),
                 # 'fiatAmount': data.get('quantity', 2),
                 'fiatType': data.get('fiatType', 1),
-                'type': data.get('type', 2),}
+                'type': data.get('type', 1),}
             else:
                 body= {
                 'coinId': data.get('coinId', 54),
@@ -980,7 +980,7 @@ class QuoteAPIView(APIView):
                 # 'quantity': data.get('quantity', 4),
                 'fiatAmount': data.get('fiatAmout'),
                 'fiatType': data.get('fiatType', 1),
-                'type': data.get('type', 1),
+                'type': data.get('type', 2),
             }
 
             payload = {
