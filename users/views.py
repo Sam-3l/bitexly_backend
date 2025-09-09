@@ -915,7 +915,7 @@ class ChangellyExchangeAmountView(APIView):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
-class validateWallet(APIView):
+class ValidateWallet(APIView):
     def post(self, request):
         currency = request.data.get("currency")
         address = request.data.get("wallet_address")
@@ -931,7 +931,7 @@ class validateWallet(APIView):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
-class createTransaction(APIView):
+class CreateTransaction(APIView):
     def post(self, request):
         from_currency = request.data.get("from")
         to_currency = request.data.get("to")
