@@ -133,6 +133,9 @@ class ApiService:
     
     def create_transaction(self, currency_from: str, currency_to: str, amount: int, address: str):
         return self._request('createTransaction', params={'from': currency_from, 'to': currency_to, 'amountFrom': amount, 'address': address})
+    
+    def verify_transaction(self, transact_id: str):
+        return self._request('getStatus',{"id": transact_id})
  
 
 api = ApiService(
@@ -141,4 +144,5 @@ api = ApiService(
         x_api_key='iHhiaXLglwUb33XL8FhqCfEs+Hq2KX65mhJs+5mB/sk=',
     )
 # api.get_convert('eth', 'btc', 0.02)
-api.create_transaction('eth','btc',0.02,'1FfmbHfnpaZjKFvyi1okTjJJusN455paPH')
+# api.create_transaction('eth','btc',0.02,'1FfmbHfnpaZjKFvyi1okTjJJusN455paPH')
+# api.verify_transaction("4bc9j3q8zkc5js3d")
