@@ -113,12 +113,23 @@ class ApiService:
             'X-Api-Key': self.x_api_key,
             'X-Api-Signature': signature,
         }
+    #   "from": "eth",
+    #   "to": "xrp",
+    #   "address": "<<valid xrp address>>",
+    #   "extraId": "<<valid xrp extraId>>",
+    #   "amountFrom": "0.0339"
 
     def get_pairs_params(self, currency_from: str, currency_to: str):
         return self._request('getPairsParams', params=[{'from': currency_from, 'to': currency_to}])
 
     def get_convert(self, currency_from: str, currency_to: str, amount: int):
         return self._request('getExchangeAmount', params=[{'from': currency_from, 'to': currency_to, 'amountFrom': amount}])
+    
+    def validate_address(self, currency_from: str, address: str):
+        return self._request('validateAddress', params=[{'from': currency_from, 'address': address}])
+    
+    def createTransaction(self, currency_from: str, currency_to: str, amount: int, address: str):
+        return self._request('createTransaction', params=[{'from': currency_from, 'to': currency_to, 'amountFrom': amount, 'address': address}])
  
 
 api = ApiService(

@@ -915,6 +915,41 @@ class ChangellyExchangeAmountView(APIView):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
+class validateWallet(APIView):
+    def post(self, request):
+        currency = request.data.get("currency")
+        address = request.data.get("wallet_address")
+
+        if not (currency and address):
+          return Response(
+              {"error": "currency and address are required"},
+              status=status.HTTP_400_BAD_REQUEST,
+          )
+        try:
+            result = api.validate_address(currency, address)
+            return Response({"result": result},status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+class createTransaction(APIView):
+    def post(self, request):
+        from_currency = request.data.get("from")
+        to_currency = request.data.get("to")
+        amount = request.data.get("amount")
+        address = request.data.get("wallet_address")
+
+        if not (from_currency and to_currency and amount and address):
+            return Response(
+                {"error": "from, to, wallet address and amount are required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            result = api.get_convert(from_currency, to_currency, amount, address)
+            return Response({"result": result},status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
 # Better: put these in settings.py and load from env
 API_KEY = "vOKI8sWuZdFUXJJAFHQ7E3z8J9UxEg"
 API_SECRET = "EIqo4GYwsteDj4bw5RxZy0ryRFmZwAec"
