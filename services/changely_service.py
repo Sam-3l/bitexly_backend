@@ -126,7 +126,7 @@ class ApiService:
         return self._request('getExchangeAmount', params=[{'from': currency_from, 'to': currency_to, 'amountFrom': amount}])
     
     def validate_address(self, currency_from: str, address: str):
-        return self._request('validateAddress', params=[{'from': currency_from, 'address': address}])
+        return self._request('validateAddress', params=[{'currency': currency_from, 'address': address}])
     
     def createTransaction(self, currency_from: str, currency_to: str, amount: int, address: str):
         return self._request('createTransaction', params=[{'from': currency_from, 'to': currency_to, 'amountFrom': amount, 'address': address}])
