@@ -29,6 +29,7 @@ urlpatterns = [
     path("api/changelly/exchange-amount/", ChangellyExchangeAmountView.as_view(), name="changelly-exchange-amount"),
     path("api/changelly/validate-wallet/", ValidateWallet.as_view(), name="validate-address"),
     path("api/changelly/create-transaction/", CreateTransaction.as_view(), name="create-transaction"),
+    path("api/changelly/confirm-transaction/", ConfirmTransaction.as_view(), name="ce-transaction"),
     path("quotes/onRamp/", QuoteAPIView.as_view(), name="get_quotes"),
 
 ]

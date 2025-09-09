@@ -959,9 +959,9 @@ class QuoteAPIView(APIView):
     def post(self, request):
         try:
             data = request.data  # JSON body from frontend
-            fiatType = data.get('fiatType', 1)
+            type = data.get('type', 1)
 
-            if (fiatType == 1):
+            if (type == 1):
                 body ={
                 'coinId': data.get('coinId', 54),
                 'coinCode': data.get('coinCode'),
@@ -982,8 +982,6 @@ class QuoteAPIView(APIView):
                 'fiatType': data.get('fiatType', 1),
                 'type': data.get('type', 1),
             }
-            
-
 
             payload = {
                 "timestamp": int(time.time() * 1000),
