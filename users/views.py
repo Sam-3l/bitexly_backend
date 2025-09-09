@@ -950,6 +950,22 @@ class CreateTransaction(APIView):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
+class ConfirmTransaction(APIView):
+    def post(self, request):
+        transaction_id = request.data.get("transaction_id")
+
+        if not transaction_id:
+            return Response(
+                {"error": "transaction id is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            result = api.verify_transaction(transaction_id)
+            return Response({"result": result},status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
 # Better: put these in settings.py and load from env
 API_KEY = "vOKI8sWuZdFUXJJAFHQ7E3z8J9UxEg"
 API_SECRET = "EIqo4GYwsteDj4bw5RxZy0ryRFmZwAec"
