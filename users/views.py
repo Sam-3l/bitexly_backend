@@ -945,7 +945,7 @@ class CreateTransaction(APIView):
             )
 
         try:
-            result = api.get_convert(from_currency, to_currency, amount, address)
+            result = api.create_transaction(from_currency, to_currency, amount, address)
             return Response({"result": result},status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
