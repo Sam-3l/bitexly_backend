@@ -118,7 +118,7 @@ class Users(AbstractBaseUser, PermissionsMixin):
         'self', on_delete=models.SET_NULL, null=True, blank=True, related_name='referrals'
     )
 
-    phone_number = models.CharField(max_length=20, null=True, blank=True, unique=True)
+    phone_number = models.CharField(max_length=20, null=True, blank=True)
     country = models.CharField(max_length=20, null=True, blank=True)
 
     def set_pin(self, raw_pin):
