@@ -147,7 +147,7 @@ api = ApiService(
         x_api_key='iHhiaXLglwUb33XL8FhqCfEs+Hq2KX65mhJs+5mB/sk=',
     )
 
-api.get_currencies()
+# api.get_currencies()
 # api.get_pairs_params("lee","azur")
 # api.get_convert('lee', 'azur', 0.02)
 # api.create_transaction('eth','btc',0.02,'1FfmbHfnpaZjKFvyi1okTjJJusN455paPH')
