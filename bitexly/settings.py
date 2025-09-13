@@ -30,7 +30,7 @@ SECRET_KEY = 'django-insecure-vo0srq^w78m93a+=1cwf_h0q5(p+tjzmb9+zj6rw_miz)wjm0q
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ["*"]
+ALLOWED_HOSTS = ["13.62.97.252","localhost"]
 
 AUTH_USER_MODEL = 'users.Users'  # Replace 'yourapp' with your actual app name
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'  # Use SMTP for production
@@ -140,7 +140,7 @@ WSGI_APPLICATION = 'bitexly.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'bitexlydb',
+        'NAME': 'bitexly_db',
         'USER': 'admin',
         'PASSWORD': 'Bitexly945',
         'HOST': 'localhost',
