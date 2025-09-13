@@ -966,6 +966,15 @@ class ConfirmTransaction(APIView):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
+
+class GetCoins(APIView):
+    def get(self):
+
+        try:
+            result = api.get_currencies
+            return Response({"result": result},status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 # Better: put these in settings.py and load from env
 API_KEY = "vOKI8sWuZdFUXJJAFHQ7E3z8J9UxEg"
 API_SECRET = "EIqo4GYwsteDj4bw5RxZy0ryRFmZwAec"
