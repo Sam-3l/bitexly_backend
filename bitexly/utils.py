@@ -22,8 +22,15 @@ def send_notification(user, title, message):
             }
         }
     )
+from threading import Thread
+from django.core.mail import EmailMessage
+
+def send_email_background(subject, message, to):
+    email = EmailMessage(subject, message, 'no-reply@example.com', [to])
+    email.send()
 
 
+    
 def send_email(user, subject, message, code=None, action_url=None, action_text=None):
     html_content = render_to_string('base_template.html', {
         'user': user,
@@ -42,6 +49,7 @@ def send_email(user, subject, message, code=None, action_url=None, action_text=N
     )
     email.attach_alternative(html_content, "text/html")
     email.send()
+    Thread(target=send_email_background, args=(subject, message, user.email)).start()
 
 # def send_reset_otp_email(user, otp_code):
 #     subject = "Verify Your Email"
