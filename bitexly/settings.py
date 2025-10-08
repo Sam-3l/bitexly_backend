@@ -82,7 +82,7 @@ CHANNEL_LAYERS = {
 
 CORS_ALLOW_ALL_ORIGINS = True
 
-MELD_CRYPTO_API_KEY = "..."
+MELD_CRYPTO_API_KEY = "...meld_una_never_putaahm_here..."
 MELD_WEBHOOK_SECRET = "..."
 
 MOONPAY_PUBLIC_KEY = os.getenv("MOONPAY_PUBLIC_KEY")
