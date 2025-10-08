@@ -1,43 +1,14 @@
-name: Deploy Bitexly Backend
-
-on:
-  push:
-    branches:
-      - main
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Deploy to VPS
-        uses: appleboy/ssh-action@v0.1.10
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          password: ${{ secrets.SERVER_PASSWORD }}
-          port: 22
-          script: |
-            cd /home/mintcoins_api/Bitexly
-            # Save any local changes (in case you hotfixed directly on the server)
-            git stash || true
-
-            # Pull the latest version
-            git pull origin main
-
-            # Activate environment and update dependencies
-            source venv/bin/activate
-            pip install -r requirements.txt
-
-            # Run migrations and collect static files
-            python manage.py migrate --noinput
-            python manage.py collectstatic --noinput
-
-            # Restart Gunicorn service
-            sudo systemctl restart gunicorn_bitexly
-
-            # Optional: Clear stash (if nothing needed)
-            git stash drop || true
+- name: Deploy to server
+  uses: appleboy/ssh-action@v0.1.10
+  with:
+    host: ${{ secrets.SERVER_HOST }}
+    username: ${{ secrets.SERVER_USER }}
+    password: ${{ secrets.SERVER_PASSWORD }}
+    script: |
+      cd /home/mintcoins_api/Bitexly
+      git pull origin main
+      source venv/bin/activate
+      pip install -r requirements.txt
+      python manage.py migrate --noinput
+      python manage.py collectstatic --noinput
+      systemctl restart gunicorn_bitexly
