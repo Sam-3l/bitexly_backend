@@ -1,5 +1,6 @@
 Untitled-1.md
 .venv
+.env
 .shop/migrations
 .users/migrations
 .wallet/migrations

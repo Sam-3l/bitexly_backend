@@ -25,12 +25,18 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-vo0srq^w78m93a+=1cwf_h0q5(p+tjzmb9+zj6rw_miz)wjm0q'
+SECRET_KEY = config('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = config('DEBUG', default=False, cast=bool)
 
-ALLOWED_HOSTS = ["13.62.97.252","localhost","bitexly-backend.onrender.com"]
+ALLOWED_HOSTS = [
+    "127.0.0.1",
+    "localhost",
+    "144.91.99.197",
+    "bitexly-backend.onrender.com",
+    "api.mintcoins.pro"
+]
 
 AUTH_USER_MODEL = 'users.Users'  # Replace 'yourapp' with your actual app name
 
@@ -75,16 +81,9 @@ CHANNEL_LAYERS = {
 }
 
 CORS_ALLOW_ALL_ORIGINS = True
-# CORS_ALLOWED_ORIGINS = [
-#     "http://localhost:4200",
-# ]
 
-MELD_CRYPTO_API_KEY = "your_meld_api_key_here"
-MELD_WEBHOOK_SECRET = "your_webhook_secret_here"
-
-# MOONPAY_PUBLIC_KEY = os.getenv("MOONPAY_PUBLIC_KEY")
-# MOONPAY_SECRET_KEY = os.getenv("MOONPAY_SECRET_KEY")
-
+MELD_CRYPTO_API_KEY = "..."
+MELD_WEBHOOK_SECRET = "..."
 
 MOONPAY_PUBLIC_KEY = os.getenv("MOONPAY_PUBLIC_KEY")
 MOONPAY_SECRET_KEY = os.getenv("MOONPAY_SECRET_KEY")
@@ -124,29 +123,16 @@ WSGI_APPLICATION = 'bitexly.wsgi.application'
 
 
 # Database
-# https://docs.djangoproject.com/en/5.2/ref/settings/#databases
-
 DATABASES = {
-#     # 'default': {
-#     #     'ENGINE': 'django.db.backends.sqlite3',
-#     #     'NAME': BASE_DIR / 'db.sqlite3',
-#     # }
-      'default': dj_database_url.config(
-       default=os.getenv('DATABASE_URL')
-    )
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": config("DB_NAME"),
+        "USER": config("DB_USER"),
+        "PASSWORD": config("DB_PASSWORD"),
+        "HOST": config("DB_HOST", default="localhost"),
+        "PORT": config("DB_PORT", default="5432"),
+    }
 }
-
-# DATABASES = {
-#    'default': {
- #       'ENGINE': 'django.db.backends.postgresql',
-   #     'NAME': 'bitexly_db',
-  #      'USER': 'admin',
-  #      'PASSWORD': 'Bitexly945',
-  #      'HOST': 'localhost',
-    #    'PORT': ''
- #   }
-#}
-
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
@@ -236,13 +222,13 @@ SWAGGER_SETTING = {
     }
 }
 
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com'   # Here I am using gmail smtp server 
-EMAIL_PORT = 587       # gmail smtp server port
-EMAIL_HOST_USER = 'omiwoleoluwagbogo@gmail.com'  # Use your email account
-EMAIL_HOST_PASSWORD = 'ydwq lede xmoq fncf' # For gmail use app password
-DEFAULT_FROM_EMAIL = 'no-reply@example.com'
-EMAIL_USE_TLS = True     # for SSL communication use EMAIL_USE_SSL
+EMAIL_BACKEND = config("EMAIL_BACKEND")
+EMAIL_HOST = config("EMAIL_HOST")
+EMAIL_PORT = config("EMAIL_PORT", cast=int)
+EMAIL_HOST_USER = config("EMAIL_HOST_USER")
+EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD")
+DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL")
+EMAIL_USE_TLS = config("EMAIL_USE_TLS", cast=bool)
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
