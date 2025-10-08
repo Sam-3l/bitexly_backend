@@ -1,6 +1,8 @@
 Untitled-1.md
 .venv
 .env
+*.sqlite3
+db.sqlite3
 .shop/migrations
 .users/migrations
 .wallet/migrations
