@@ -3,7 +3,7 @@ name: Deploy to Server
 on:
   push:
     branches:
-      - main   # or whatever branch you deploy from
+      - main
 
 jobs:
   deploy:
@@ -20,10 +20,10 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASSWORD }}
           script: |
-            cd /home/mintcoins_api/Bitexly
+            cd /home/mintcoins-api/bitexly
             git pull origin main
             source venv/bin/activate
             pip install -r requirements.txt
             python manage.py migrate --noinput
             python manage.py collectstatic --noinput
-            systemctl restart gunicorn_bitexly
+            sudo systemctl restart gunicorn_bitexly

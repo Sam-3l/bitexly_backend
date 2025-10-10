@@ -1,10 +1,75 @@
-Untitled-1.md
-.venv
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+bin/
+var/
+*.log
+
+# ---- Virtual Environments ----
+venv/
+.venv/
+env/
+ENV/
+
+# ---- Environment & Secrets ----
 .env
+*.env
+.env.*
+
+# ---- Django ----
 *.sqlite3
 db.sqlite3
-.shop/migrations
-.users/migrations
-.wallet/migrations
+media/
+staticfiles/
+static_root/
+static_cdn/
+local_settings.py
+
+# ---- Migrations (optional: ignore app migrations only in early dev) ----
+# Uncomment next lines if you don’t want to commit migrations yet
+# */migrations/
+# !*/migrations/__init__.py
+
+# ---- IDEs / Editors ----
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# ---- OS Files ----
+.DS_Store
+Thumbs.db
+
+# ---- Logs / Cache ----
+*.log
+*.pot
+*.pyc
+*.pyo
+*.pyd
+*.pid
+celerybeat-schedule
+*.seed
+.cache/
+coverage/
+htmlcov/
+*.cover
+.pytest_cache/
+
+# ---- Custom Project Files ----
 generate_fernet_key.py
-foodhybrid1
+Untitled-1.md
+foodhybrid1/
+
+# ---- Backup / Archive files ----
+*.zip
+*.tar
+*.tar.gz
+*.bak
