@@ -2,7 +2,6 @@
 WSGI config for foodhybrid project.
 
 It exposes the WSGI callable as a module-level variable named ``application``.
-test
 """
 
 import os
