@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     'corsheaders',
 
     'users',
+    'meld',
 
     'allauth',
     'allauth.account',
@@ -124,13 +125,9 @@ WSGI_APPLICATION = 'bitexly.wsgi.application'
 
 # Database
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": config("DB_NAME"),
-        "USER": config("DB_USER"),
-        "PASSWORD": config("DB_PASSWORD"),
-        "HOST": config("DB_HOST", default="localhost"),
-        "PORT": config("DB_PORT", default="5432"),
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
 
@@ -229,6 +226,8 @@ EMAIL_HOST_USER = config("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD")
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL")
 EMAIL_USE_TLS = config("EMAIL_USE_TLS", cast=bool)
+
+MELD_API_KEY = "WeQAy7xygdsRK693n8GkAB:22LXJCrpxT8xhFA1JL6abKjmdAZiWg67"
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
