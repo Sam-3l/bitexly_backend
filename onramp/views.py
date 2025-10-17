@@ -1,205 +1,428 @@
+import json
+import time
+import hmac
+import hashlib
+from base64 import b64encode
 import requests
+import logging
+from functools import lru_cache
+
+from django.conf import settings
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
-from django.conf import settings
 
-ONRAMP_BASE_URL = settings.ONRAMP_BASE_URL
-ONRAMP_APP_ID = settings.ONRAMP_APP_ID
+# Setup logger
+logger = logging.getLogger(__name__)
+
+# Onramp API Configuration
+ONRAMP_API_BASE_URL = "https://api.onramp.money"
 ONRAMP_API_KEY = settings.ONRAMP_API_KEY
+ONRAMP_API_SECRET = settings.ONRAMP_API_SECRET
 
-def onramp_request(method, endpoint, data=None, params=None):
-    """Helper function to make authenticated requests to OnRamp"""
-    url = f"{ONRAMP_BASE_URL}{endpoint}"
-    
-    headers = {
-        "Authorization": f"Bearer {ONRAMP_API_KEY}",
-        "Content-Type": "application/json",
+
+def generate_onramp_headers(body):
+    """
+    Generate required headers for Onramp API requests.
+    """
+    payload = {
+        "timestamp": int(time.time() * 1000),
+        "body": body
     }
 
+    payload_encoded = b64encode(json.dumps(payload).encode()).decode()
+    signature = hmac.new(
+        ONRAMP_API_SECRET.encode(),
+        payload_encoded.encode(),
+        hashlib.sha512
+    ).hexdigest()
+
+    return {
+        "Accept": "application/json",
+        "Content-Type": "application/json;charset=UTF-8",
+        "X-ONRAMP-SIGNATURE": signature,
+        "X-ONRAMP-APIKEY": ONRAMP_API_KEY,
+        "X-ONRAMP-PAYLOAD": payload_encoded,
+    }
+
+
+@lru_cache(maxsize=1)
+def get_onramp_config_mappings():
+    """
+    Fetch and cache the configuration mappings from Onramp API.
+    This includes fiatSymbolMapping, coinSymbolMapping, and chainMapping.
+    Cache expires on server restart.
+    """
     try:
-        response = requests.request(
-            method=method,
-            url=url,
-            headers=headers,
-            json=data,
-            params=params,
-            timeout=20
+        body = {}
+        headers = generate_onramp_headers(body)
+        url = f"{ONRAMP_API_BASE_URL}/onramp/api/v2/common/transaction/allConfigMapping"
+        response = requests.post(url, headers=headers, json=body, timeout=30)
+        
+        if response.status_code == 200:
+            data = response.json().get("data", {})
+            logger.info("Successfully fetched Onramp config mappings")
+            return data
+        else:
+            logger.error(f"Failed to fetch config mappings: {response.status_code}")
+            return {}
+    except Exception as e:
+        logger.error(f"Error fetching config mappings: {str(e)}")
+        return {}
+
+
+def get_fiat_type(currency_code):
+    """
+    Get the fiatType numeric code for a given currency code.
+    Handles inconsistencies in casing or unexpected data types.
+    """
+    config = get_onramp_config_mappings()
+    fiat_mapping = config.get("fiatSymbolMapping", {})
+
+    # Try uppercase, lowercase, or fallback to empty dict
+    fiat_info = fiat_mapping.get(currency_code.upper()) or \
+                fiat_mapping.get(currency_code.lower()) or {}
+
+    # If the mapping is an int instead of dict, wrap it properly
+    if isinstance(fiat_info, int):
+        fiat_type = fiat_info
+    else:
+        fiat_type = fiat_info.get("fiatType")
+
+    if fiat_type is None:
+        logger.warning(
+            f"Fiat type not found for {currency_code}. Available: "
+            f"{list(fiat_mapping.keys())[:20]}"
         )
 
-        try:
-            res_data = response.json()
-        except ValueError:
-            res_data = {"error": "Invalid JSON response from OnRamp"}
+    return fiat_type
 
-        if not response.ok:
+
+def get_coin_code(currency_code):
+    """
+    Validate if a coin is supported and get its details.
+    """
+    config = get_onramp_config_mappings()
+    coin_mapping = config.get("coinSymbolMapping", {})
+    
+    currency_lower = currency_code.lower()
+    coin_info = coin_mapping.get(currency_lower, {})
+    
+    if not coin_info:
+        logger.warning(f"Coin not found for {currency_code}. Available: {list(coin_mapping.keys())[:20]}")
+        
+    return coin_info
+
+
+# ------------------------------------------------------------------
+# ✅ QUOTE ENDPOINT (STANDARD API - DYNAMIC MAPPING)
+# ------------------------------------------------------------------
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def get_onramp_quote(request):
+    """
+    Get quote for BUY/SELL transactions using the standard quotes API.
+    Fetches fiat type mappings dynamically from the API.
+    """
+    try:
+        data = request.data
+        action = data.get("action", "").upper()
+        source_currency = data.get("sourceCurrencyCode", "").upper()
+        destination_currency = data.get("destinationCurrencyCode", "").upper()
+        source_amount = data.get("sourceAmount")
+        network = data.get("network", "bep20")  # Default to bep20
+
+        if not all([action, source_currency, destination_currency, source_amount]):
+            return Response(
+                {"success": False, "message": "Missing required fields."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Determine transaction type
+        txn_type = "BUY" if action == "BUY" else "SELL"
+
+        # Prepare the request body based on transaction type
+        if txn_type == "BUY":
+            # For BUY: fiat -> crypto
+            fiat_type = get_fiat_type(source_currency)
+            if fiat_type is None:
+                # Fetch available currencies for better error message
+                config = get_onramp_config_mappings()
+                available_fiats = list(config.get("fiatSymbolMapping", {}).keys())
+                
+                return Response(
+                    {
+                        "success": False,
+                        "message": f"Unsupported fiat currency: {source_currency}",
+                        "supportedCurrencies": available_fiats
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Validate crypto currency
+            coin_info = get_coin_code(destination_currency)
+            if not coin_info:
+                config = get_onramp_config_mappings()
+                available_coins = list(config.get("coinSymbolMapping", {}).keys())
+                
+                return Response(
+                    {
+                        "success": False,
+                        "message": f"Unsupported cryptocurrency: {destination_currency}",
+                        "supportedCoins": available_coins[:50]  # Limit to first 50
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            quote_body = {
+                "coinCode": destination_currency.lower(),  # e.g., "usdt"
+                "network": network.lower(),  # e.g., "bep20"
+                "fiatAmount": float(source_amount),
+                "fiatType": fiat_type,
+                "type": 1  # 1 for ONRAMP (buy)
+            }
+        else:
+            # For SELL: crypto -> fiat
+            fiat_type = get_fiat_type(destination_currency)
+            if fiat_type is None:
+                config = get_onramp_config_mappings()
+                available_fiats = list(config.get("fiatSymbolMapping", {}).keys())
+                
+                return Response(
+                    {
+                        "success": False,
+                        "message": f"Unsupported fiat currency: {destination_currency}",
+                        "supportedCurrencies": available_fiats
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Validate crypto currency
+            coin_info = get_coin_code(source_currency)
+            if not coin_info:
+                config = get_onramp_config_mappings()
+                available_coins = list(config.get("coinSymbolMapping", {}).keys())
+                
+                return Response(
+                    {
+                        "success": False,
+                        "message": f"Unsupported cryptocurrency: {source_currency}",
+                        "supportedCoins": available_coins[:50]
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            quote_body = {
+                "coinCode": source_currency.lower(),  # e.g., "usdt"
+                "network": network.lower(),
+                "quantity": float(source_amount),  # Amount of crypto to sell
+                "fiatType": fiat_type,
+                "type": 2  # 2 for OFFRAMP (sell)
+            }
+
+        # Use the quotes endpoint
+        quote_url = f"{ONRAMP_API_BASE_URL}/onramp/api/v2/common/transaction/quotes"
+        headers = generate_onramp_headers(quote_body)
+
+        # Log the request for debugging
+        logger.info(f"Onramp Quote Request to {quote_url}: {quote_body}")
+
+        quote_response = requests.post(quote_url, headers=headers, json=quote_body, timeout=30)
+        quote_json = quote_response.json()
+
+        # Log the response for debugging
+        logger.info(f"Onramp Quote Response: {quote_json}")
+
+        if quote_json.get("status") != 1:
             return Response(
                 {
                     "success": False,
-                    "status_code": response.status_code,
-                    "message": res_data.get("message", "OnRamp request failed"),
-                    "details": res_data,
+                    "message": "Quote request failed.",
+                    "details": quote_json.get("error", "Unknown error"),
+                    "apiResponse": quote_json,
+                    "requestBody": quote_body
                 },
-                status=response.status_code,
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
-        return Response(
-            {
-                "success": True,
-                "data": res_data,
-            },
-            status=response.status_code,
-        )
+        quote_data = quote_json.get("data", {})
 
-    except requests.exceptions.Timeout:
+        # Standardize the response for your frontend
+        if txn_type == "BUY":
+            standardized_quote = {
+                "sourceCurrency": source_currency,
+                "destinationCurrency": destination_currency.upper(),
+                "sourceAmount": source_amount,
+                "estimatedAmount": quote_data.get("quantity"),
+                "rate": quote_data.get("rate"),
+                "fees": {
+                    "onrampFee": quote_data.get("onrampFee", 0),
+                    "clientFee": quote_data.get("clientFee", 0),
+                    "gatewayFee": quote_data.get("gatewayFee", 0),
+                    "gasFee": quote_data.get("gasFee", 0),
+                },
+                "totalFees": sum([
+                    quote_data.get("onrampFee", 0),
+                    quote_data.get("clientFee", 0),
+                    quote_data.get("gatewayFee", 0),
+                    quote_data.get("gasFee", 0)
+                ]),
+                "txnType": txn_type,
+                "network": network,
+            }
+        else:
+            standardized_quote = {
+                "sourceCurrency": source_currency.upper(),
+                "destinationCurrency": destination_currency,
+                "sourceAmount": source_amount,
+                "estimatedAmount": quote_data.get("fiatAmount"),
+                "rate": quote_data.get("rate"),
+                "fees": {
+                    "onrampFee": quote_data.get("onrampFee", 0),
+                    "clientFee": quote_data.get("clientFee", 0),
+                    "gatewayFee": quote_data.get("gatewayFee", 0),
+                    "tdsFee": quote_data.get("tdsFee", 0),
+                },
+                "totalFees": sum([
+                    quote_data.get("onrampFee", 0),
+                    quote_data.get("clientFee", 0),
+                    quote_data.get("gatewayFee", 0),
+                    quote_data.get("tdsFee", 0)
+                ]),
+                "txnType": txn_type,
+                "network": network,
+            }
+
+        return Response({"success": True, "quote": standardized_quote}, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        logger.error(f"Onramp Quote Error: {str(e)}", exc_info=True)
         return Response(
-            {"success": False, "error": "OnRamp API timeout"},
-            status=status.HTTP_504_GATEWAY_TIMEOUT,
-        )
-    except requests.exceptions.ConnectionError:
-        return Response(
-            {"success": False, "error": "Network error while connecting to OnRamp"},
-            status=status.HTTP_502_BAD_GATEWAY,
-        )
-    except requests.exceptions.RequestException as err:
-        return Response(
-            {"success": False, "error": str(err)},
+            {"success": False, "message": "Internal server error", "details": str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
 
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def get_onramp_quote(request):
-    """
-    Get quote from OnRamp for BUY or SELL
-    """
-    data = request.data
-    action = data.get("action", "BUY").upper()
-    
-    payload = {
-        "appId": ONRAMP_APP_ID,
-        "amount": data.get("sourceAmount"),
-        "type": action.lower(),
-        "country": data.get("countryCode"),
-    }
-
-    if action == "BUY":
-        payload["fiatCurrency"] = data.get("sourceCurrencyCode")
-        payload["cryptoCurrency"] = data.get("destinationCurrencyCode")
-    else:  # SELL
-        payload["cryptoCurrency"] = data.get("sourceCurrencyCode")
-        payload["fiatCurrency"] = data.get("destinationCurrencyCode")
-
-    # Use POST with JSON payload
-    response = onramp_request("POST", "/v2/quote", data=payload)
-
-    # Check for errors or empty quote
-    if not response.data.get("success") or not response.data.get("data"):
-        return Response(
-            {
-                "success": False,
-                "message": "Failed to get quote from OnRamp",
-                "details": response.data
-            },
-            status=response.status_code
-        )
-
-    onramp_data = response.data["data"]
-
-    # Verify OnRamp returned valid amounts
-    dest_amount = onramp_data.get("cryptoAmount") if action == "BUY" else onramp_data.get("fiatAmount")
-    if dest_amount is None:
-        return Response(
-            {
-                "success": False,
-                "message": "OnRamp quote returned null values",
-                "details": onramp_data
-            },
-            status=status.HTTP_200_OK
-        )
-
-    transformed = {
-        "success": True,
-        "data": {
-            "quote": {
-                "serviceProvider": "ONRAMP",
-                "provider": "OnRamp",
-                "destinationAmount": dest_amount,
-                "destinationAmountWithoutFees": onramp_data.get("cryptoAmountWithoutFees") if action == "BUY" else onramp_data.get("fiatAmountWithoutFees"),
-                "exchangeRate": onramp_data.get("rate") or onramp_data.get("exchangeRate"),
-                "totalFee": onramp_data.get("totalFee") or onramp_data.get("fee"),
-                "transactionFee": onramp_data.get("transactionFee"),
-                "networkFee": onramp_data.get("networkFee"),
-                "minimumAmount": onramp_data.get("minAmount") or onramp_data.get("minimumAmount"),
-            }
-        }
-    }
-
-    return Response(transformed, status=status.HTTP_200_OK)
-
-
-@api_view(['GET'])
+# ------------------------------------------------------------------
+# ✅ PAYMENT METHODS (ALL CONFIG MAPPINGS)
+# ------------------------------------------------------------------
+@api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def get_onramp_payment_methods(request):
-    """Get available payment methods from OnRamp"""
-    return onramp_request("GET", "/v2/payment-methods", params=request.query_params)
+    """
+    Fetch all supported fiat currencies, coins, and chains from Onramp.
+    """
+    try:
+        body = {}
+        headers = generate_onramp_headers(body)
+        url = f"{ONRAMP_API_BASE_URL}/onramp/api/v2/common/transaction/allConfigMapping"
+        response = requests.post(url, headers=headers, json=body, timeout=30)
+        return Response(response.json(), status=response.status_code)
+
+    except requests.exceptions.RequestException as e:
+        return Response(
+            {"success": False, "message": f"Request to Onramp API failed: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+    except Exception as e:
+        return Response(
+            {"success": False, "message": f"Unexpected error: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 
-@api_view(['POST'])
+# ------------------------------------------------------------------
+# ✅ GENERATE ONRAMP/OFFRAMP URL (WHITELABEL API)
+# ------------------------------------------------------------------
+@api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def generate_onramp_url(request):
     """
-    Generate OnRamp widget URL
-    Expected payload for BUY:
-    {
-        "walletAddress": "...",
-        "sourceCurrencyCode": "NGN",
-        "destinationCurrencyCode": "BTC",
-        "sourceAmount": 800000
-    }
-    
-    Expected payload for SELL:
-    {
-        "sourceCurrencyCode": "BTC",
-        "destinationCurrencyCode": "NGN",
-        "sourceAmount": 0.01,
-        "bankDetails": {...}
-    }
+    Generate widget link for BUY/SELL flow using WhiteLabel API.
+    This creates a transaction and returns a payment URL.
     """
-    data = request.data
-    action = data.get("action", "BUY").upper()
-    
-    params = {
-        "appId": ONRAMP_APP_ID,
-        "type": action.lower(),
-    }
-    
-    if action == "BUY":
-        params["walletAddress"] = data.get("walletAddress")
-        params["fiatCurrency"] = data.get("sourceCurrencyCode")
-        params["cryptoCurrency"] = data.get("destinationCurrencyCode")
-        params["amount"] = data.get("sourceAmount")
-    else:  # SELL
-        params["cryptoCurrency"] = data.get("sourceCurrencyCode")
-        params["fiatCurrency"] = data.get("destinationCurrencyCode")
-        params["amount"] = data.get("sourceAmount")
+    try:
+        data = request.data
+        action = data.get("action", "").upper()
+        wallet_address = data.get("walletAddress")
+        source_currency = data.get("sourceCurrencyCode", "").upper()
+        destination_currency = data.get("destinationCurrencyCode", "").upper()
+        source_amount = data.get("sourceAmount")
+        customer_id = data.get("customerId")  # Required for whitelabel API
+        network = data.get("network", "bep20")  # Default to bep20
+
+        if not all([action, source_currency, destination_currency, source_amount, customer_id]):
+            return Response(
+                {"success": False, "message": "Missing required fields. customerId is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        txn_type = "BUY" if action == "BUY" else "SELL"
+
+        # Prepare request body for WhiteLabel API
+        if txn_type == "BUY":
+            # Onramp (buy crypto)
+            body = {
+                "customerId": customer_id,
+                "fromCurrency": source_currency,  # Fiat
+                "toCurrency": destination_currency.lower(),  # Crypto
+                "fromAmount": str(source_amount),
+                "walletAddress": wallet_address,
+                "network": network.lower()
+            }
+            
+            url = f"{ONRAMP_API_BASE_URL}/onramp/api/v2/whiteLabel/onramp/create"
+        else:
+            # Offramp (sell crypto)
+            body = {
+                "customerId": customer_id,
+                "fromCurrency": source_currency.lower(),  # Crypto
+                "toCurrency": destination_currency,  # Fiat
+                "fromAmount": str(source_amount),
+                "fiatAccountId": data.get("fiatAccountId"),  # Required for offramp
+                "chain": network.lower()
+            }
+            
+            url = f"{ONRAMP_API_BASE_URL}/onramp/api/v2/whiteLabel/offramp/create"
+
+        headers = generate_onramp_headers(body)
+        logger.info(f"Generate URL Request to {url}: {body}")
+
+        response = requests.post(url, headers=headers, json=body, timeout=30)
+        result = response.json()
+
+        logger.info(f"Generate URL Response: {result}")
+
+        if result.get("status") != 1:
+            return Response(
+                {
+                    "success": False,
+                    "message": "Failed to create transaction.",
+                    "details": result.get("error", "Unknown error"),
+                    "apiResponse": result,
+                    "requestBody": body
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        transaction_data = result.get("data", {})
         
-        # Add bank details if provided
-        bank_details = data.get("bankDetails", {})
-        if bank_details.get("accountNumber"):
-            params["accountNumber"] = bank_details["accountNumber"]
-        if bank_details.get("accountName"):
-            params["accountName"] = bank_details["accountName"]
-        if bank_details.get("bankName"):
-            params["bankName"] = bank_details["bankName"]
-    
-    # Build URL with query params
-    from urllib.parse import urlencode
-    url = f"https://onramp.money/app/?{urlencode(params)}"
-    
-    return Response({
-        "success": True,
-        "widgetUrl": url
-    }, status=status.HTTP_200_OK)
+        return Response(
+            {
+                "success": True,
+                "transactionId": transaction_data.get("transactionId"),
+                "widgetUrl": transaction_data.get("paymentLink") or transaction_data.get("depositAddress"),
+                "paymentUrl": transaction_data.get("paymentLink") or transaction_data.get("depositAddress"),
+                "status": transaction_data.get("status"),
+                "data": transaction_data
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    except Exception as e:
+        logger.error(f"Generate URL Error: {str(e)}", exc_info=True)
+        return Response(
+            {"success": False, "message": "Internal server error", "details": str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )

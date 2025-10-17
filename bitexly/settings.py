@@ -235,9 +235,9 @@ EMAIL_USE_TLS = config("EMAIL_USE_TLS", cast=bool)
 
 MELD_API_KEY = "WeQAy7xygdsRK693n8GkAB:22LXJCrpxT8xhFA1JL6abKjmdAZiWg67"
 
-ONRAMP_BASE_URL = "https://onramp.money/api"
-ONRAMP_APP_ID = "1552467"
+ONRAMP_API_BASE_URL = "https://api.onramp.money"
 ONRAMP_API_KEY = "vOKI8sWuZdFUXJJAFHQ7E3z8J9UxEg"
+ONRAMP_API_SECRET = "EIqo4GYwsteDj4bw5RxZy0ryRFmZwAec"
 
 MOONPAY_BASE_URL = "https://api.moonpay.com"
 MOONPAY_API_KEY = "EIqo4GYwsteDj4bw5RxZy0ryRFmZwAec"
