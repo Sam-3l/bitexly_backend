@@ -59,6 +59,8 @@ INSTALLED_APPS = [
 
     'users',
     'meld',
+    'moonpay',
+    'onramp',
 
     'allauth',
     'allauth.account',
