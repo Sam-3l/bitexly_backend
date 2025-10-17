@@ -74,14 +74,6 @@ def onramp_request(method, endpoint, data=None, params=None):
 def get_onramp_quote(request):
     """
     Get quote from OnRamp for BUY or SELL
-    Expected payload:
-    {
-        "action": "BUY" or "SELL",
-        "sourceAmount": 100,
-        "sourceCurrencyCode": "NGN" or "BTC",
-        "destinationCurrencyCode": "BTC" or "NGN",
-        "countryCode": "NG"
-    }
     """
     data = request.data
     action = data.get("action", "BUY").upper()
@@ -92,39 +84,60 @@ def get_onramp_quote(request):
         "type": action.lower(),
         "country": data.get("countryCode"),
     }
-    
+
     if action == "BUY":
         payload["fiatCurrency"] = data.get("sourceCurrencyCode")
         payload["cryptoCurrency"] = data.get("destinationCurrencyCode")
     else:  # SELL
         payload["cryptoCurrency"] = data.get("sourceCurrencyCode")
         payload["fiatCurrency"] = data.get("destinationCurrencyCode")
-    
-    response = onramp_request("GET", "/v2/quote", params=payload)
-    
-    # Transform response to match Meld structure
-    if response.status_code == 200:
-        onramp_data = response.data.get("data", {})
-        
-        transformed = {
-            "success": True,
-            "data": {
-                "quote": {
-                    "serviceProvider": "ONRAMP",
-                    "provider": "OnRamp",
-                    "destinationAmount": onramp_data.get("cryptoAmount") if action == "BUY" else onramp_data.get("fiatAmount"),
-                    "destinationAmountWithoutFees": onramp_data.get("cryptoAmountWithoutFees") if action == "BUY" else onramp_data.get("fiatAmountWithoutFees"),
-                    "exchangeRate": onramp_data.get("rate") or onramp_data.get("exchangeRate"),
-                    "totalFee": onramp_data.get("totalFee") or onramp_data.get("fee"),
-                    "transactionFee": onramp_data.get("transactionFee"),
-                    "networkFee": onramp_data.get("networkFee"),
-                    "minimumAmount": onramp_data.get("minAmount") or onramp_data.get("minimumAmount"),
-                }
+
+    # Use POST with JSON payload
+    response = onramp_request("POST", "/v2/quote", data=payload)
+
+    # Check for errors or empty quote
+    if not response.data.get("success") or not response.data.get("data"):
+        return Response(
+            {
+                "success": False,
+                "message": "Failed to get quote from OnRamp",
+                "details": response.data
+            },
+            status=response.status_code
+        )
+
+    onramp_data = response.data["data"]
+
+    # Verify OnRamp returned valid amounts
+    dest_amount = onramp_data.get("cryptoAmount") if action == "BUY" else onramp_data.get("fiatAmount")
+    if dest_amount is None:
+        return Response(
+            {
+                "success": False,
+                "message": "OnRamp quote returned null values",
+                "details": onramp_data
+            },
+            status=status.HTTP_200_OK
+        )
+
+    transformed = {
+        "success": True,
+        "data": {
+            "quote": {
+                "serviceProvider": "ONRAMP",
+                "provider": "OnRamp",
+                "destinationAmount": dest_amount,
+                "destinationAmountWithoutFees": onramp_data.get("cryptoAmountWithoutFees") if action == "BUY" else onramp_data.get("fiatAmountWithoutFees"),
+                "exchangeRate": onramp_data.get("rate") or onramp_data.get("exchangeRate"),
+                "totalFee": onramp_data.get("totalFee") or onramp_data.get("fee"),
+                "transactionFee": onramp_data.get("transactionFee"),
+                "networkFee": onramp_data.get("networkFee"),
+                "minimumAmount": onramp_data.get("minAmount") or onramp_data.get("minimumAmount"),
             }
         }
-        return Response(transformed, status=status.HTTP_200_OK)
-    
-    return response
+    }
+
+    return Response(transformed, status=status.HTTP_200_OK)
 
 
 @api_view(['GET'])
