@@ -100,7 +100,7 @@ def get_onramp_quote(request):
         payload["cryptoCurrency"] = data.get("sourceCurrencyCode")
         payload["fiatCurrency"] = data.get("destinationCurrencyCode")
     
-    response = onramp_request("POST", "/v2/quote", data=payload)
+    response = onramp_request("GET", "/v2/quote", params=payload)
     
     # Transform response to match Meld structure
     if response.status_code == 200:

@@ -32,15 +32,14 @@ def moonpay_request(method, endpoint, data=None, params=None):
             res_data = {"error": "Invalid JSON response from MoonPay"}
 
         if not response.ok:
-            return Response(
-                {
+            # If MoonPay returns 401, still return 200 but include error in payload
+            if response.status_code == 401:
+                return Response({
                     "success": False,
-                    "status_code": response.status_code,
-                    "message": res_data.get("message", "MoonPay request failed"),
-                    "details": res_data,
-                },
-                status=response.status_code,
-            )
+                    "message": "MoonPay API authentication failed",
+                    "details": response.data
+                }, status=status.HTTP_200_OK)
+            return response
 
         return Response(
             {
