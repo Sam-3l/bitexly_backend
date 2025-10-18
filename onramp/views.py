@@ -114,43 +114,84 @@ def get_coin_code(currency_code):
         
     return coin_info
 
-def get_available_network(coin_code, all_config):
+def get_available_network(coin_code):
     """
-    Fetch an available network for the given coin code.
-    Handles cases where networks can be:
-      - dict with 'networkCode'
-      - list of strings
-      - single string
-    """
-    coin_info = all_config.get("coinSymbolMapping", {}).get(coin_code.lower())
+    Returns the best network for a given coin_code.
+    Fetches all_config internally and handles edge cases gracefully.
     
-    # If coin_info is missing, fallback
-    if not coin_info:
-        return "bep20"
+    Returns:
+        dict: {
+            "success": bool,
+            "coin": str,
+            "network": str or None,
+            "message": str
+        }
+    """
+    try:
+        coin_code_clean = coin_code.strip().lower()
+        
+        # Use cached Onramp config instead of fetching from localhost
+        config = get_onramp_config_mappings()
+        coin_mapping = config.get("coinSymbolMapping", {})
+        chain_mapping = config.get("chainSymbolMapping", {})
+        
+        if not coin_mapping or not chain_mapping:
+            return {
+                "success": False,
+                "coin": coin_code_clean,
+                "network": None,
+                "message": "Coin or chain mappings are missing in config."
+            }
+        
+        # Standardize keys for matching
+        coin_mapping_std = {str(k).strip().lower(): v for k, v in coin_mapping.items()}
+        chain_mapping_std = {str(k).strip().lower(): v for k, v in chain_mapping.items()}
 
-    networks = all_config.get("chainSymbolMapping", {})
-
-    # networks could be dict keys or list of strings
-    if isinstance(networks, dict):
-        # Try to pick the first key that exists for this coin
-        for net in networks:
-            if net.lower() in coin_code.lower() or True:
-                return net.lower()
-        return "bep20"
-
-    elif isinstance(networks, list):
-        first_net = networks[0]
-        if isinstance(first_net, dict):
-            return first_net.get("networkCode", "bep20").lower()
-        elif isinstance(first_net, str):
-            return first_net.lower()
-        else:
-            return "bep20"
-
-    elif isinstance(networks, str):
-        return networks.lower()
-
-    return "bep20"  # final fallback
+        if coin_code_clean not in coin_mapping_std:
+            return {
+                "success": False,
+                "coin": coin_code_clean,
+                "network": None,
+                "message": f"Coin '{coin_code}' not found in mappings."
+            }
+        
+        # Preferred networks
+        preferred_networks = ["bep20", "erc20", "trc20", "matic20"]
+        
+        for net in preferred_networks:
+            if net in chain_mapping_std:
+                return {
+                    "success": True,
+                    "coin": coin_code_clean,
+                    "network": net,
+                    "message": "Preferred network found."
+                }
+        
+        # If none of the preferred networks exist, pick the first available
+        fallback_network = next(iter(chain_mapping_std), None)
+        if fallback_network:
+            return {
+                "success": True,
+                "coin": coin_code_clean,
+                "network": fallback_network,
+                "message": "No preferred network found, using fallback."
+            }
+        
+        # No networks available at all
+        return {
+            "success": False,
+            "coin": coin_code_clean,
+            "network": None,
+            "message": "No networks available."
+        }
+    
+    except Exception as e:
+        return {
+            "success": False,
+            "coin": coin_code_clean,
+            "network": None,
+            "message": f"Unexpected error: {str(e)}"
+        }
 
 
 # ------------------------------------------------------------------
@@ -169,7 +210,8 @@ def get_onramp_quote(request):
         source_currency = data.get("sourceCurrencyCode", "").upper()
         destination_currency = data.get("destinationCurrencyCode", "").upper()
         source_amount = data.get("sourceAmount")
-        network = get_available_network(destination_currency) if action == "BUY" else get_available_network(source_currency)
+        resp = get_available_network(destination_currency) if action == "BUY" else get_available_network(source_currency)
+        network = resp.get("network")
 
         if not all([action, source_currency, destination_currency, source_amount]):
             return Response(
@@ -386,7 +428,8 @@ def generate_onramp_url(request):
         source_currency = data.get("sourceCurrencyCode", "").upper()
         destination_currency = data.get("destinationCurrencyCode", "").upper()
         source_amount = data.get("sourceAmount")
-        network = get_available_network(destination_currency) if action == "BUY" else get_available_network(source_currency)
+        resp = get_available_network(destination_currency) if action == "BUY" else get_available_network(source_currency)
+        network = resp.get("network")
 
         if not all([action, source_currency, destination_currency, source_amount]):
             return Response(
