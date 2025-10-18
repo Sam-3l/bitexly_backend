@@ -333,65 +333,51 @@ def get_onramp_payment_methods(request):
 
 
 # ------------------------------------------------------------------
-# ✅ GENERATE ONRAMP/OFFRAMP URL (WHITELABEL API)
+# ✅ GENERATE ONRAMP/OFFRAMP URL (PUBLIC API)
 # ------------------------------------------------------------------
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def generate_onramp_url(request):
     """
-    Generate widget link for BUY/SELL flow using WhiteLabel API.
+    Generate widget link for BUY/SELL flow using OnRamp public API.
     This creates a transaction and returns a payment URL.
     """
     try:
         data = request.data
         action = data.get("action", "").upper()
-        wallet_address = data.get("walletAddress")
         source_currency = data.get("sourceCurrencyCode", "").upper()
         destination_currency = data.get("destinationCurrencyCode", "").upper()
         source_amount = data.get("sourceAmount")
-        customer_id = data.get("customerId")  # Required for whitelabel API
-        network = data.get("network", "bep20")  # Default to bep20
+        network = data.get("network", "bep20")  # default network
+        fiat_type = data.get("fiatType", 1)     # default fiat type (1 = INR)
+        coin_code = destination_currency.lower()  # crypto code
 
-        if not all([action, source_currency, destination_currency, source_amount, customer_id]):
+        if not all([action, source_currency, destination_currency, source_amount]):
             return Response(
-                {"success": False, "message": "Missing required fields. customerId is required."},
+                {"success": False, "message": "Missing required fields."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        txn_type = "BUY" if action == "BUY" else "SELL"
+        # Determine flow type: 1 -> onramp (BUY), 2 -> offramp (SELL)
+        flow_type = 1 if action == "BUY" else 2
 
-        # Prepare request body for WhiteLabel API
-        if txn_type == "BUY":
-            # Onramp (buy crypto)
-            body = {
-                "customerId": customer_id,
-                "fromCurrency": source_currency,  # Fiat
-                "toCurrency": destination_currency.lower(),  # Crypto
-                "fromAmount": str(source_amount),
-                "walletAddress": wallet_address,
-                "network": network.lower()
-            }
-            
-            url = f"{ONRAMP_API_BASE_URL}/onramp/api/v2/whiteLabel/onramp/create"
-        else:
-            # Offramp (sell crypto)
-            body = {
-                "customerId": customer_id,
-                "fromCurrency": source_currency.lower(),  # Crypto
-                "toCurrency": destination_currency,  # Fiat
-                "fromAmount": str(source_amount),
-                "fiatAccountId": data.get("fiatAccountId"),  # Required for offramp
-                "chain": network.lower()
-            }
-            
-            url = f"{ONRAMP_API_BASE_URL}/onramp/api/v2/whiteLabel/offramp/create"
+        # Prepare request body for public API
+        body = {
+            "coinCode": coin_code,
+            "network": network.lower(),
+            "fiatAmount": source_amount,
+            "fiatType": fiat_type,
+            "type": flow_type
+        }
 
+        # Generate headers using existing helper
         headers = generate_onramp_headers(body)
+
+        url = f"{ONRAMP_API_BASE_URL}/onramp/api/v2/common/transaction/generateLink"
         logger.info(f"Generate URL Request to {url}: {body}")
 
         response = requests.post(url, headers=headers, json=body, timeout=30)
         result = response.json()
-
         logger.info(f"Generate URL Response: {result}")
 
         if result.get("status") != 1:
@@ -407,14 +393,12 @@ def generate_onramp_url(request):
             )
 
         transaction_data = result.get("data", {})
-        
+
         return Response(
             {
                 "success": True,
-                "transactionId": transaction_data.get("transactionId"),
-                "widgetUrl": transaction_data.get("paymentLink") or transaction_data.get("depositAddress"),
-                "paymentUrl": transaction_data.get("paymentLink") or transaction_data.get("depositAddress"),
-                "status": transaction_data.get("status"),
+                "widgetUrl": transaction_data.get("link"),
+                "paymentUrl": transaction_data.get("link"),
                 "data": transaction_data
             },
             status=status.HTTP_200_OK,
