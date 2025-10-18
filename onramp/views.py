@@ -114,6 +114,28 @@ def get_coin_code(currency_code):
         
     return coin_info
 
+def get_available_network(coin_code):
+    """
+    Automatically fetch an available network for the given coin.
+    - coin_code: e.g., 'btc', 'usdt'
+    - Returns the first available network as a string (e.g., 'BEP20', 'ERC20').
+    """
+    coin_info = get_coin_code(coin_code)
+    networks = coin_info.get("networks", [])
+
+    if not networks:
+        logger.warning(f"No networks found for coin: {coin_code}. Using default 'bep20'.")
+        return "bep20"  # fallback if nothing is returned
+
+    # Pick the first available network
+    selected_network = networks[0].get("networkCode") if isinstance(networks[0], dict) else networks[0]
+    
+    if not selected_network:
+        logger.warning(f"Network code missing in coin info for {coin_code}. Using default 'bep20'.")
+        return "bep20"
+
+    return selected_network.lower()
+
 
 # ------------------------------------------------------------------
 # ✅ QUOTE ENDPOINT (STANDARD API - DYNAMIC MAPPING)
@@ -131,7 +153,7 @@ def get_onramp_quote(request):
         source_currency = data.get("sourceCurrencyCode", "").upper()
         destination_currency = data.get("destinationCurrencyCode", "").upper()
         source_amount = data.get("sourceAmount")
-        network = data.get("network", "bep20")  # Default to bep20
+        network = get_available_network(destination_currency) if action == "BUY" else get_available_network(source_currency)
 
         if not all([action, source_currency, destination_currency, source_amount]):
             return Response(
@@ -348,7 +370,7 @@ def generate_onramp_url(request):
         source_currency = data.get("sourceCurrencyCode", "").upper()
         destination_currency = data.get("destinationCurrencyCode", "").upper()
         source_amount = data.get("sourceAmount")
-        network = data.get("network", "bep20")  # default network
+        network = get_available_network(destination_currency) if action == "BUY" else get_available_network(source_currency)
 
         if not all([action, source_currency, destination_currency, source_amount]):
             return Response(
