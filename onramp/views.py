@@ -333,14 +333,14 @@ def get_onramp_payment_methods(request):
 
 
 # ------------------------------------------------------------------
-# ✅ GENERATE ONRAMP/OFFRAMP URL (PUBLIC API)
+# ✅ GENERATE ONRAMP/OFFRAMP URL (PUBLIC API WITH AUTO FIAT TYPE)
 # ------------------------------------------------------------------
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def generate_onramp_url(request):
     """
     Generate widget link for BUY/SELL flow using OnRamp public API.
-    This creates a transaction and returns a payment URL.
+    Automatically determines fiatType from the source/destination currency.
     """
     try:
         data = request.data
@@ -349,8 +349,6 @@ def generate_onramp_url(request):
         destination_currency = data.get("destinationCurrencyCode", "").upper()
         source_amount = data.get("sourceAmount")
         network = data.get("network", "bep20")  # default network
-        fiat_type = data.get("fiatType", 1)     # default fiat type (1 = INR)
-        coin_code = destination_currency.lower()  # crypto code
 
         if not all([action, source_currency, destination_currency, source_amount]):
             return Response(
@@ -360,6 +358,22 @@ def generate_onramp_url(request):
 
         # Determine flow type: 1 -> onramp (BUY), 2 -> offramp (SELL)
         flow_type = 1 if action == "BUY" else 2
+
+        # Automatically get fiatType from mapping
+        fiat_currency = source_currency if flow_type == 1 else destination_currency
+        fiat_type = get_fiat_type(fiat_currency)
+        if fiat_type is None:
+            return Response(
+                {
+                    "success": False,
+                    "message": f"Unsupported fiat currency: {fiat_currency}",
+                    "supportedCurrencies": list(get_onramp_config_mappings().get("fiatSymbolMapping", {}).keys())
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Determine crypto code
+        coin_code = destination_currency.lower() if flow_type == 1 else source_currency.lower()
 
         # Prepare request body for public API
         body = {
@@ -372,7 +386,6 @@ def generate_onramp_url(request):
 
         # Generate headers using existing helper
         headers = generate_onramp_headers(body)
-
         url = f"{ONRAMP_API_BASE_URL}/onramp/api/v2/common/transaction/generateLink"
         logger.info(f"Generate URL Request to {url}: {body}")
 
