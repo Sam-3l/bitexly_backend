@@ -114,33 +114,43 @@ def get_coin_code(currency_code):
         
     return coin_info
 
-def get_available_network(coin_code):
+def get_available_network(coin_code, all_config):
     """
-    Automatically fetch an available network for the given coin.
-    - coin_code: e.g., 'btc', 'usdt'
-    - Returns the first available network as a string (e.g., 'bep20', 'erc20').
+    Fetch an available network for the given coin code.
+    Handles cases where networks can be:
+      - dict with 'networkCode'
+      - list of strings
+      - single string
     """
-    coin_info = get_coin_code(coin_code)
-    networks = coin_info.get("networks", [])
-
-    if not networks:
-        logger.warning(f"No networks found for coin: {coin_code}. Using default 'bep20'.")
-        return "bep20"  # fallback
-
-    first_network = networks[0]
-
-    # Handle both dict or string formats
-    if isinstance(first_network, dict):
-        network_code = first_network.get("networkCode")
-        if not network_code:
-            logger.warning(f"Network code missing in coin info for {coin_code}. Using default 'bep20'.")
-            return "bep20"
-        return network_code.lower()
-    elif isinstance(first_network, str):
-        return first_network.lower()
-    else:
-        logger.warning(f"Unexpected network format for {coin_code}: {first_network}. Using default 'bep20'.")
+    coin_info = all_config.get("coinSymbolMapping", {}).get(coin_code.lower())
+    
+    # If coin_info is missing, fallback
+    if not coin_info:
         return "bep20"
+
+    networks = all_config.get("chainSymbolMapping", {})
+
+    # networks could be dict keys or list of strings
+    if isinstance(networks, dict):
+        # Try to pick the first key that exists for this coin
+        for net in networks:
+            if net.lower() in coin_code.lower() or True:
+                return net.lower()
+        return "bep20"
+
+    elif isinstance(networks, list):
+        first_net = networks[0]
+        if isinstance(first_net, dict):
+            return first_net.get("networkCode", "bep20").lower()
+        elif isinstance(first_net, str):
+            return first_net.lower()
+        else:
+            return "bep20"
+
+    elif isinstance(networks, str):
+        return networks.lower()
+
+    return "bep20"  # final fallback
 
 
 # ------------------------------------------------------------------
