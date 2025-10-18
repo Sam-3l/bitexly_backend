@@ -118,23 +118,29 @@ def get_available_network(coin_code):
     """
     Automatically fetch an available network for the given coin.
     - coin_code: e.g., 'btc', 'usdt'
-    - Returns the first available network as a string (e.g., 'BEP20', 'ERC20').
+    - Returns the first available network as a string (e.g., 'bep20', 'erc20').
     """
     coin_info = get_coin_code(coin_code)
     networks = coin_info.get("networks", [])
 
     if not networks:
         logger.warning(f"No networks found for coin: {coin_code}. Using default 'bep20'.")
-        return "bep20"  # fallback if nothing is returned
+        return "bep20"  # fallback
 
-    # Pick the first available network
-    selected_network = networks[0].get("networkCode") if isinstance(networks[0], dict) else networks[0]
-    
-    if not selected_network:
-        logger.warning(f"Network code missing in coin info for {coin_code}. Using default 'bep20'.")
+    first_network = networks[0]
+
+    # Handle both dict or string formats
+    if isinstance(first_network, dict):
+        network_code = first_network.get("networkCode")
+        if not network_code:
+            logger.warning(f"Network code missing in coin info for {coin_code}. Using default 'bep20'.")
+            return "bep20"
+        return network_code.lower()
+    elif isinstance(first_network, str):
+        return first_network.lower()
+    else:
+        logger.warning(f"Unexpected network format for {coin_code}: {first_network}. Using default 'bep20'.")
         return "bep20"
-
-    return selected_network.lower()
 
 
 # ------------------------------------------------------------------
