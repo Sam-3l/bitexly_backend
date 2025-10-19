@@ -126,16 +126,24 @@ WSGI_APPLICATION = 'bitexly.wsgi.application'
 
 
 # Database
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": config("DB_NAME"),
-        "USER": config("DB_USER"),
-        "PASSWORD": config("DB_PASSWORD"),
-        "HOST": config("DB_HOST", default="localhost"),
-        "PORT": config("DB_PORT", default="5432"),
+if config("USE_SQLITE", default=False, cast=bool):
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": config("DB_NAME"),
+            "USER": config("DB_USER"),
+            "PASSWORD": config("DB_PASSWORD"),
+            "HOST": config("DB_HOST", default="localhost"),
+            "PORT": config("DB_PORT", default="5432"),
+        }
+    }
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
@@ -233,14 +241,18 @@ EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD")
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL")
 EMAIL_USE_TLS = config("EMAIL_USE_TLS", cast=bool)
 
+# Meld Configuration
 MELD_API_KEY = "WeQAy7xygdsRK693n8GkAB:22LXJCrpxT8xhFA1JL6abKjmdAZiWg67"
 
+# Onramp Configuration
 ONRAMP_API_BASE_URL = "https://api.onramp.money"
 ONRAMP_API_KEY = "vOKI8sWuZdFUXJJAFHQ7E3z8J9UxEg"
 ONRAMP_API_SECRET = "EIqo4GYwsteDj4bw5RxZy0ryRFmZwAec"
 
-MOONPAY_BASE_URL = "https://api.moonpay.com"
-MOONPAY_API_KEY = "EIqo4GYwsteDj4bw5RxZy0ryRFmZwAec"
+# MoonPay Configuration
+MOONPAY_PUBLISHABLE_KEY = 'pk_test_wDeaqeEyPY4vKTAf51GL7RvrotpuPZ'
+MOONPAY_SECRET_KEY = 'sk_test_ytv79rlyZvs5DiKQAH96LS0Fc09lxVb'
+MOONPAY_WEBHOOK_KEY = 'wk_test_etg4qC5x9BkliQM6WdVmJnVS1tufRmD'
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
