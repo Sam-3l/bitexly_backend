@@ -3,6 +3,9 @@ from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.exceptions import APIException
+from rest_framework_simplejwt.views import TokenRefreshView
+from rest_framework_simplejwt.serializers import TokenRefreshSerializer
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 # from services.changely_service import changelly_request
 from services.changely_service import api
 from .models import Users, EmailOTP, Transaction
@@ -341,6 +344,61 @@ class SigninView(APIView):
             })
         else:
             return Response({'detail': 'Invalid credentials.'}, status=status.HTTP_401_UNAUTHORIZED)
+
+class RefreshTokenView(APIView):
+    """
+    Takes a refresh token and returns a new access token.
+    """
+    @swagger_auto_schema(
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'refresh': openapi.Schema(type=openapi.TYPE_STRING, description='Refresh token'),
+            },
+            required=['refresh']
+        ),
+        responses={
+            200: openapi.Response(
+                description="Token refreshed successfully!",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'access': openapi.Schema(type=openapi.TYPE_STRING),
+                        'refresh': openapi.Schema(type=openapi.TYPE_STRING),
+                    }
+                )
+            ),
+            401: openapi.Response(description="Invalid or expired refresh token")
+        }
+    )
+    def post(self, request):
+        refresh_token = request.data.get('refresh')
+        
+        if not refresh_token:
+            return Response(
+                {'detail': 'Refresh token is required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            serializer = TokenRefreshSerializer(data={'refresh': refresh_token})
+            serializer.is_valid(raise_exception=True)
+            
+            return Response({
+                'access': serializer.validated_data['access'],
+                'refresh': serializer.validated_data.get('refresh', refresh_token)  # Some configs rotate refresh tokens
+            }, status=status.HTTP_200_OK)
+            
+        except TokenError as e:
+            return Response(
+                {'detail': 'Invalid or expired refresh token.'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        except Exception as e:
+            return Response(
+                {'detail': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
   
 class SetPinView(APIView):
     permission_classes = [IsTrader]

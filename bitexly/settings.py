@@ -242,17 +242,17 @@ DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL")
 EMAIL_USE_TLS = config("EMAIL_USE_TLS", cast=bool)
 
 # Meld Configuration
-MELD_API_KEY = "WeQAy7xygdsRK693n8GkAB:22LXJCrpxT8xhFA1JL6abKjmdAZiWg67"
+MELD_API_KEY = config("MELD_API_KEY")
 
 # Onramp Configuration
-ONRAMP_API_BASE_URL = "https://api.onramp.money"
-ONRAMP_API_KEY = "vOKI8sWuZdFUXJJAFHQ7E3z8J9UxEg"
-ONRAMP_API_SECRET = "EIqo4GYwsteDj4bw5RxZy0ryRFmZwAec"
+ONRAMP_API_BASE_URL = config("ONRAMP_API_BASE_URL", default="https://api.onramp.money")
+ONRAMP_API_KEY = config("ONRAMP_API_KEY")
+ONRAMP_API_SECRET = config("ONRAMP_API_SECRET")
 
 # MoonPay Configuration
-MOONPAY_PUBLISHABLE_KEY = 'pk_test_wDeaqeEyPY4vKTAf51GL7RvrotpuPZ'
-MOONPAY_SECRET_KEY = 'sk_test_ytv79rlyZvs5DiKQAH96LS0Fc09lxVb'
-MOONPAY_WEBHOOK_KEY = 'wk_test_etg4qC5x9BkliQM6WdVmJnVS1tufRmD'
+MOONPAY_PUBLISHABLE_KEY = config("MOONPAY_PUBLISHABLE_KEY")
+MOONPAY_SECRET_KEY = config("MOONPAY_SECRET_KEY")
+MOONPAY_WEBHOOK_KEY = config("MOONPAY_WEBHOOK_KEY")
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
