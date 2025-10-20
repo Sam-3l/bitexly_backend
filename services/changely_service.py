@@ -139,6 +139,9 @@ class ApiService:
     
     def get_currencies(self):
         return self._request('getCurrenciesFull',{})
+    
+    def get_min_amount(self, currency_from: str, currency_to: str):
+        return self._request('getMinAmount', params={'from': currency_from, 'to': currency_to})
  
 
 api = ApiService(

@@ -2,6 +2,7 @@ import time
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework.exceptions import APIException
 # from services.changely_service import changelly_request
 from services.changely_service import api
 from .models import Users, EmailOTP, Transaction
@@ -905,35 +906,83 @@ class ChangellyExchangeAmountView(APIView):
             )
 
         try:
+            # Get exchange amount
             result = api.get_convert(from_currency, to_currency, amount)
             
             # Check if result is empty or None
             if not result or (isinstance(result, list) and len(result) == 0):
-                # Get min/max amounts for better error message
+                # Fetch pair parameters to get min/max
                 try:
-                    min_amount_result = api.get_min_amount(from_currency, to_currency)
-                    min_amount = min_amount_result.get('minAmount') if min_amount_result else None
+                    pair_params = api.get_pairs_params(from_currency, to_currency)
                     
-                    if min_amount and float(amount) < float(min_amount):
+                    # pair_params is a list, get first item
+                    if pair_params and len(pair_params) > 0:
+                        pair_info = pair_params[0]
+                        min_amount = pair_info.get('minAmountFloat') or pair_info.get('minAmount')
+                        max_amount = pair_info.get('maxAmountFloat') or pair_info.get('maxAmount')
+                        
+                        amount_float = float(amount)
+                        
+                        # Check if below minimum
+                        if min_amount and amount_float < float(min_amount):
+                            return Response(
+                                {
+                                    "error": f"Amount is below minimum. Minimum: {min_amount} {from_currency.upper()}",
+                                    "minAmount": str(min_amount),
+                                    "type": "below_minimum"
+                                },
+                                status=status.HTTP_400_BAD_REQUEST
+                            )
+                        
+                        # Check if above maximum
+                        if max_amount and amount_float > float(max_amount):
+                            return Response(
+                                {
+                                    "error": f"Amount exceeds maximum. Maximum: {max_amount} {from_currency.upper()}",
+                                    "maxAmount": str(max_amount),
+                                    "type": "above_maximum"
+                                },
+                                status=status.HTTP_400_BAD_REQUEST
+                            )
+                        
+                        # If not min/max issue, pair might not be available
                         return Response(
                             {
-                                "error": f"Amount is below minimum. Minimum: {min_amount} {from_currency.upper()}",
-                                "minAmount": min_amount,
-                                "type": "below_minimum"
+                                "error": f"Exchange rate not available for {from_currency.upper()} to {to_currency.upper()}. This trading pair may not be supported.",
+                                "type": "pair_unavailable"
                             },
                             status=status.HTTP_400_BAD_REQUEST
                         )
-                except:
-                    pass
-                
-                return Response(
-                    {"error": "Unable to get exchange rate for this amount. Please try a different amount."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+                    else:
+                        # Pair not found at all
+                        return Response(
+                            {
+                                "error": f"Trading pair {from_currency.upper()}/{to_currency.upper()} is not supported.",
+                                "type": "pair_not_supported"
+                            },
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                        
+                except Exception as pair_error:
+                    print(f"Error fetching pair params: {pair_error}")
+                    return Response(
+                        {
+                            "error": "Unable to get exchange rate. Please try a different amount or pair.",
+                            "type": "unknown_error"
+                        },
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
             
             return Response({"result": result}, status=status.HTTP_200_OK)
             
+        except ApiException as e:
+            # Handle Changelly API specific errors
+            return Response(
+                {"error": e.message, "code": e.code},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         except Exception as e:
+            print(f"Unexpected error: {e}")
             return Response(
                 {"error": str(e)}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
