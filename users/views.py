@@ -905,15 +905,39 @@ class ChangellyExchangeAmountView(APIView):
             )
 
         try:
-            # result = changelly_request("getExchangeAmount", {
-            #     "from": from_currency,
-            #     "to": to_currency,
-            #     "amount": amount
-            # })
             result = api.get_convert(from_currency, to_currency, amount)
-            return Response({"result": result},status=status.HTTP_200_OK)
+            
+            # Check if result is empty or None
+            if not result or (isinstance(result, list) and len(result) == 0):
+                # Get min/max amounts for better error message
+                try:
+                    min_amount_result = api.get_min_amount(from_currency, to_currency)
+                    min_amount = min_amount_result.get('minAmount') if min_amount_result else None
+                    
+                    if min_amount and float(amount) < float(min_amount):
+                        return Response(
+                            {
+                                "error": f"Amount is below minimum. Minimum: {min_amount} {from_currency.upper()}",
+                                "minAmount": min_amount,
+                                "type": "below_minimum"
+                            },
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                except:
+                    pass
+                
+                return Response(
+                    {"error": "Unable to get exchange rate for this amount. Please try a different amount."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            return Response({"result": result}, status=status.HTTP_200_OK)
+            
         except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
         
 class ValidateWallet(APIView):
     def post(self, request):
