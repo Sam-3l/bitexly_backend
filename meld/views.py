@@ -78,28 +78,28 @@ def meld_request(method, endpoint, data=None, params=None):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([])
 def get_crypto_currencies(request):
     """Fetch available cryptocurrencies from Meld.io"""
     return meld_request("GET", "/service-providers/properties/crypto-currencies")
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([])
 def get_fiat_currencies(request):
     """Fetch available fiat currencies from Meld.io"""
     return meld_request("GET", "/service-providers/properties/fiat-currencies")
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([])
 def get_payment_methods(request):
     """Fetch payment methods based on provider/currency"""
     return meld_request("GET", "/service-providers/properties/payment-methods", params=request.query_params)
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([])
 def get_crypto_quote(request):
     """
     Create a crypto quote (buy/sell estimate).
@@ -126,7 +126,7 @@ def get_crypto_quote(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([])
 def create_session_widget(request):
     """Create a crypto payment widget session"""
     return meld_request("POST", "/crypto/session/widget", data=request.data)

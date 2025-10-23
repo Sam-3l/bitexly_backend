@@ -198,7 +198,7 @@ def get_available_network(coin_code):
 # ✅ QUOTE ENDPOINT (STANDARD API - DYNAMIC MAPPING)
 # ------------------------------------------------------------------
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([])
 def get_onramp_quote(request):
     """
     Get quote for BUY/SELL transactions using the standard quotes API.
@@ -388,7 +388,7 @@ def get_onramp_quote(request):
 # ✅ PAYMENT METHODS (ALL CONFIG MAPPINGS)
 # ------------------------------------------------------------------
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@permission_classes([])
 def get_onramp_payment_methods(request):
     """
     Fetch all supported fiat currencies, coins, and chains from Onramp.
@@ -416,7 +416,7 @@ def get_onramp_payment_methods(request):
 # ✅ GENERATE ONRAMP/OFFRAMP URL (PUBLIC API WITH AUTO FIAT TYPE)
 # ------------------------------------------------------------------
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([])
 def generate_onramp_url(request):
     """
     Generate widget link for BUY/SELL flow using OnRamp public API.

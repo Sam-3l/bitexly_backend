@@ -115,7 +115,7 @@ def validate_currency_support(currency_code, transaction_type="buy"):
 # ✅ GET QUOTE ENDPOINT
 # ------------------------------------------------------------------
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([])
 def get_moonpay_quote(request):
     """
     Get quote for BUY/SELL transactions from MoonPay.
@@ -263,7 +263,7 @@ def get_moonpay_quote(request):
 # ✅ GET PAYMENT METHODS (Similar to OnRamp's structure)
 # ------------------------------------------------------------------
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@permission_classes([])
 def get_moonpay_payment_methods(request):
     """
     Fetch all supported payment methods, currencies, and country info from MoonPay.
@@ -337,7 +337,7 @@ def get_moonpay_payment_methods(request):
 # ✅ GET SUPPORTED CURRENCIES
 # ------------------------------------------------------------------
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@permission_classes([])
 def get_moonpay_currencies_endpoint(request):
     """
     Fetch all supported currencies from MoonPay.
@@ -369,7 +369,7 @@ def get_moonpay_currencies_endpoint(request):
 # ✅ GET CURRENCY LIMITS
 # ------------------------------------------------------------------
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@permission_classes([])
 def get_currency_limits(request):
     """
     Get min/max limits for a specific currency.
@@ -424,7 +424,7 @@ def get_currency_limits(request):
 # ✅ GENERATE WIDGET URL
 # ------------------------------------------------------------------
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([])
 def generate_moonpay_url(request):
     """
     Generate a signed MoonPay widget URL for BUY or SELL.
@@ -546,7 +546,7 @@ def generate_moonpay_url(request):
 # ✅ GET TRANSACTION STATUS (Using Transaction ID)
 # ------------------------------------------------------------------
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@permission_classes([])
 def get_transaction_status(request, transaction_id):
     """
     Get the status of a MoonPay transaction.
@@ -585,7 +585,7 @@ def get_transaction_status(request, transaction_id):
 # ✅ GET IP ADDRESS INFO (User's location/country)
 # ------------------------------------------------------------------
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@permission_classes([])
 def get_ip_address_info(request):
     """
     Get information about the user's IP address (country, state, etc.)
