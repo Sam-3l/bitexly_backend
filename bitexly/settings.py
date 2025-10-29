@@ -35,7 +35,8 @@ ALLOWED_HOSTS = [
     "localhost",
     "144.91.99.197",
     "bitexly-backend.onrender.com",
-    "api.mintcoins.pro"
+    "api.mintcoins.pro",
+    "https://55e7874c1529.ngrok-free.app",
 ]
 
 AUTH_USER_MODEL = 'users.Users'  # Replace 'yourapp' with your actual app name

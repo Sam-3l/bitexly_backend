@@ -139,7 +139,10 @@ def get_crypto_quote(request):
 def create_session_widget(request):
     """Create a crypto payment widget session"""
     try:
-        data = request.data
+        data = request.data.copy()
+        
+        data['skipMeldScreen'] = True
+
         customer_id = data.get('externalCustomerId')
         session_type = data.get('sessionType', 'BUY')
         session_data = data.get('sessionData', {})
