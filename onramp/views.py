@@ -7,6 +7,7 @@ import requests
 import logging
 from functools import lru_cache
 
+from django.core.cache import cache
 from django.conf import settings
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -462,7 +463,7 @@ def generate_onramp_url(request):
             "network": network.lower(),
             "fiatAmount": source_amount,
             "fiatType": fiat_type,
-            "type": flow_type
+            "flowType": flow_type
         }
 
         # Generate headers using existing helper
@@ -487,12 +488,33 @@ def generate_onramp_url(request):
             )
 
         transaction_data = result.get("data", {})
+        url_hash = transaction_data.get("urlHash")  # This is the key identifier
+
+        # Store transaction for tracking
+        transaction_key = f"txn_onramp_{url_hash}" if url_hash else f"txn_onramp_{int(time.time())}_{flow_type}"
+        transaction_record = {
+            'transaction_id': transaction_key,
+            'provider': 'ONRAMP',
+            'status': 'PENDING',
+            'url_hash': url_hash,  # IMPORTANT: Store this for status checks
+            'widget_url': transaction_data.get('link'),
+            'created_at': int(time.time() * 1000),
+            'flow_type': 'BUY' if flow_type == 1 else 'SELL',
+            'source_currency': source_currency,
+            'destination_currency': destination_currency,
+            'amount': source_amount,
+        }
+
+        from django.core.cache import cache
+        cache.set(transaction_key, transaction_record, timeout=86400)
 
         return Response(
             {
                 "success": True,
                 "widgetUrl": transaction_data.get("link"),
                 "paymentUrl": transaction_data.get("link"),
+                "transactionId": transaction_key,
+                "urlHash": url_hash,
                 "data": transaction_data
             },
             status=status.HTTP_200_OK,
@@ -503,4 +525,108 @@ def generate_onramp_url(request):
         return Response(
             {"success": False, "message": "Internal server error", "details": str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+    
+@api_view(['POST'])
+@permission_classes([])
+def onramp_webhook(request):
+    """
+    Handle OnRamp webhook notifications.
+    """
+    try:
+        data = request.data
+        logger.info(f"OnRamp webhook received: {json.dumps(data, indent=2)}")
+        
+        url_hash = data.get('urlHash') or data.get('transactionHash')
+        status = data.get('status', '').upper()
+        
+        status_mapping = {
+            'COMPLETED': 'COMPLETED',
+            'SUCCESS': 'COMPLETED',
+            'SUCCESSFUL': 'COMPLETED',
+            'FAILED': 'FAILED',
+            'CANCELLED': 'FAILED',
+            'EXPIRED': 'FAILED',
+            'PENDING': 'PENDING',
+            'PROCESSING': 'PENDING',
+            'INITIATED': 'PENDING'
+        }
+        
+        mapped_status = status_mapping.get(status, 'PENDING')
+        
+        if url_hash:
+            transaction_key = f"txn_onramp_{url_hash}"
+            transaction_record = cache.get(transaction_key)
+            
+            if transaction_record:
+                transaction_record['status'] = mapped_status
+                transaction_record['updated_at'] = int(time.time() * 1000)
+                transaction_record['webhook_data'] = data
+                transaction_record['provider_status'] = status
+                
+                cache.set(transaction_key, transaction_record, timeout=86400)
+                logger.info(f"✅ Updated OnRamp transaction {transaction_key} to {mapped_status}")
+            else:
+                logger.warning(f"⚠️ Transaction not found for urlHash: {url_hash}")
+        else:
+            logger.warning("⚠️ No urlHash in OnRamp webhook payload")
+        
+        return Response({"success": True, "message": "Webhook processed"}, status=200)
+        
+    except Exception as e:
+        logger.error(f"OnRamp webhook error: {str(e)}", exc_info=True)
+        return Response({"success": False, "error": str(e)}, status=400)
+    
+@api_view(['POST'])
+@permission_classes([])
+def get_onramp_transaction_status(request):
+    """
+    Get OnRamp transaction status by urlHash.
+    """
+    try:
+        url_hash = request.data.get('urlHash')
+        
+        if not url_hash:
+            return Response(
+                {"success": False, "message": "urlHash is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        body = {"urlHash": url_hash}
+        headers = generate_onramp_headers(body)
+        url = f"{ONRAMP_API_BASE_URL}/onramp/api/v2/common/transaction/getTransactionStatus"
+        
+        logger.info(f"Checking OnRamp status for: {url_hash}")
+        
+        response = requests.post(url, headers=headers, json=body, timeout=30)
+        result = response.json()
+        
+        logger.info(f"OnRamp status response: {result}")
+        
+        if result.get("status") != 1:
+            return Response(
+                {
+                    "success": False,
+                    "message": "Failed to get transaction status",
+                    "details": result.get("error", "Unknown error")
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        txn_data = result.get("data", {})
+        
+        return Response(
+            {
+                "success": True,
+                "status": txn_data.get("status"),
+                "transactionData": txn_data
+            },
+            status=status.HTTP_200_OK
+        )
+        
+    except Exception as e:
+        logger.error(f"OnRamp status check error: {str(e)}", exc_info=True)
+        return Response(
+            {"success": False, "message": "Internal server error", "details": str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )

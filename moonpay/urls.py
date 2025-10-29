@@ -22,4 +22,6 @@ urlpatterns = [
     
     # Get user's IP address information (for location-based restrictions)
     path('ip-info/', views.get_ip_address_info, name='moonpay_ip_info'),
+
+    path('webhook/', views.moonpay_webhook, name='moonpay_webhook'),
 ]

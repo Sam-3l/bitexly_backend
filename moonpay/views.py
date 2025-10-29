@@ -1,11 +1,13 @@
 import hmac
 import hashlib
 import json
+import time
 import requests
 import logging
 from urllib.parse import urlencode
 from functools import lru_cache
 
+from django.core.cache import cache
 from django.conf import settings
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -437,7 +439,7 @@ def generate_moonpay_url(request):
         "sourceAmount": 100,
         "walletAddress": "0x..." (optional for BUY),
         "externalCustomerId": "user123" (optional),
-        "redirectURL": "https://yourapp.com/success" (optional)
+        "redirectURL": "https://bitexly.com/success" (optional)
     }
     """
     try:
@@ -524,11 +526,35 @@ def generate_moonpay_url(request):
 
         logger.info(f"Generated MoonPay URL for {action}: {signed_url}")
 
+        # Store transaction for tracking
+        transaction_key = f"txn_moonpay_{int(time.time())}_{action}"
+        transaction_record = {
+            'transaction_id': transaction_key,
+            'provider': 'MOONPAY',
+            'status': 'PENDING',
+            'widget_url': signed_url,
+            'created_at': int(time.time() * 1000),
+            'action': action,
+            'source_currency': source_currency,
+            'destination_currency': destination_currency,
+            'amount': source_amount,
+        }
+
+        from django.core.cache import cache
+        cache.set(transaction_key, transaction_record, timeout=86400)
+
+        # Track all transactions for this customer
+        if external_customer_id:  # You need to pass this as externalCustomerId parameter
+            customer_txns = cache.get(f"customer_{external_customer_id}_all") or []
+            customer_txns.append(transaction_key)
+            cache.set(f"customer_{external_customer_id}_all", customer_txns, timeout=86400)
+
         return Response(
             {
                 "success": True,
                 "widgetUrl": signed_url,
                 "paymentUrl": signed_url,
+                "transactionId": transaction_key,
                 "action": action,
             },
             status=status.HTTP_200_OK,
@@ -616,3 +642,54 @@ def get_ip_address_info(request):
             {"success": False, "message": "Internal server error", "details": str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+    
+@api_view(['POST'])
+@permission_classes([])
+def moonpay_webhook(request):
+    """
+    Handle MoonPay webhook notifications.
+    """
+    try:
+        data = request.data
+        logger.info(f"MoonPay webhook received: {json.dumps(data, indent=2)}")
+        
+        # MoonPay sends their transaction ID
+        moonpay_txn_id = data.get('externalTransactionId') or data.get('id')
+        external_customer_id = data.get('externalCustomerId')
+        status = data.get('status', '').upper()
+        
+        status_mapping = {
+            'COMPLETED': 'COMPLETED',
+            'FAILED': 'FAILED',
+            'PENDING': 'PENDING',
+            'WAITINGAUTHORIZATION': 'PENDING',
+            'WAITINGPAYMENT': 'PENDING',
+            'WAITINGCAPTURE': 'PENDING'
+        }
+        
+        mapped_status = status_mapping.get(status, 'PENDING')
+        
+        # Try to find transaction by customer ID (similar to Meld)
+        if external_customer_id:
+            # Check if we stored this customer's transactions
+            customer_txns = cache.get(f"customer_{external_customer_id}_all") or []
+            
+            for txn_key in reversed(customer_txns):
+                transaction_record = cache.get(txn_key)
+                
+                if transaction_record and transaction_record.get('status') == 'PENDING':
+                    transaction_record['status'] = mapped_status
+                    transaction_record['updated_at'] = int(time.time() * 1000)
+                    transaction_record['webhook_data'] = data
+                    transaction_record['provider_status'] = status
+                    transaction_record['moonpay_txn_id'] = moonpay_txn_id
+                    
+                    cache.set(txn_key, transaction_record, timeout=86400)
+                    logger.info(f"✅ Updated MoonPay transaction {txn_key} to {mapped_status}")
+                    break
+        
+        return Response({"success": True, "message": "Webhook processed"}, status=200)
+        
+    except Exception as e:
+        logger.error(f"MoonPay webhook error: {str(e)}", exc_info=True)
+        return Response({"success": False, "error": str(e)}, status=400)
