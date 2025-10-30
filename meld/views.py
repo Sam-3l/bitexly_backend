@@ -90,47 +90,8 @@ def meld_request(method, endpoint, data=None, params=None):
 @api_view(['GET'])
 @permission_classes([])
 def get_crypto_currencies(request):
-    """Fetch available cryptocurrencies from Meld.io and add network-specific variants"""
-    response = meld_request("GET", "/service-providers/properties/crypto-currencies")
-    
-    # If successful, add network-specific tokens
-    if response.status_code == 200 and hasattr(response, 'data'):
-        data = response.data.get('data', [])
-        
-        # Network variants to add (if base currency exists)
-        network_variants = {
-            'USDT': ['USDT_TRC20', 'USDT_ERC20', 'USDT_BEP20'],
-            'USDC': ['USDC_ERC20', 'USDC_TRC20', 'USDC_BEP20'],
-            'BTC': ['BTC_BTC'],
-            'ETH': ['ETH_ERC20'],
-            'BNB': ['BNB_BEP20'],
-        }
-        
-        # Get list of base currencies from Meld
-        base_currencies = [item.get('cryptoCurrency', '').upper() for item in data if isinstance(item, dict)]
-        
-        # Add network variants
-        additional_currencies = []
-        for base_currency, variants in network_variants.items():
-            if base_currency in base_currencies:
-                for variant in variants:
-                    # Check if variant doesn't already exist
-                    if variant not in base_currencies:
-                        additional_currencies.append({
-                            'cryptoCurrency': variant,
-                            'name': variant.replace('_', ' '),
-                            'network': variant.split('_')[-1] if '_' in variant else None,
-                            'isNetworkVariant': True,
-                            'baseCurrency': base_currency
-                        })
-        
-        # Merge with original data
-        if isinstance(data, list):
-            data.extend(additional_currencies)
-            response.data['data'] = data
-            logger.info(f"✅ Added {len(additional_currencies)} network-specific currency variants")
-    
-    return response
+    """Fetch available cryptocurrencies from Meld.io"""
+    return meld_request("GET", "/service-providers/properties/crypto-currencies")
 
 
 @api_view(['GET'])
