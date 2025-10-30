@@ -412,6 +412,82 @@ def get_onramp_payment_methods(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
+@api_view(["GET"])
+@permission_classes([])
+def get_onramp_payment_methods_by_currency(request):
+    """
+    Get payment methods for a specific currency from OnRamp.
+    Uses the PUBLIC fetchPaymentMethodType endpoint.
+    Query params: fiatCurrency
+    """
+    try:
+        fiat_currency = request.GET.get('fiatCurrency', '').upper()
+        
+        if not fiat_currency:
+            return Response(
+                {"success": False, "message": "fiatCurrency is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # First, get the fiatType for this currency from our cached config
+        config = get_onramp_config_mappings()
+        fiat_mapping = config.get("fiatSymbolMapping", {})
+        fiat_info = fiat_mapping.get(fiat_currency.upper()) or fiat_mapping.get(fiat_currency.lower())
+        
+        if isinstance(fiat_info, int):
+            fiat_type = fiat_info
+        else:
+            fiat_type = fiat_info.get("fiatType") if fiat_info else None
+        
+        if fiat_type is None:
+            return Response(
+                {
+                    "success": False, 
+                    "message": f"Currency {fiat_currency} not supported",
+                    "supportedCurrencies": list(fiat_mapping.keys())
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Now fetch payment methods from the PUBLIC endpoint (no auth needed)
+        payment_methods_url = "https://api.onramp.money/onramp/api/v2/common/public/fetchPaymentMethodType"
+        
+        headers = {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json;charset=UTF-8'
+        }
+        
+        payment_response = requests.get(payment_methods_url, headers=headers, timeout=30)
+        payment_data = payment_response.json()
+        
+        if payment_data.get("status") != 1:
+            return Response(
+                {"success": False, "message": "Failed to fetch payment methods from OnRamp"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+        # Extract payment methods for this specific fiatType
+        all_payment_methods = payment_data.get("data", {})
+        methods_for_currency = all_payment_methods.get(str(fiat_type), {})
+        
+        return Response(
+            {
+                "success": True,
+                "data": {
+                    "fiatType": fiat_type,
+                    "currency": fiat_currency,
+                    "paymentMethods": methods_for_currency
+                }
+            },
+            status=status.HTTP_200_OK
+        )
+        
+    except Exception as e:
+        logger.error(f"OnRamp payment methods by currency error: {str(e)}", exc_info=True)
+        return Response(
+            {"success": False, "message": "Internal server error", "details": str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 # ------------------------------------------------------------------
 # ✅ GENERATE ONRAMP/OFFRAMP URL (PUBLIC API WITH AUTO FIAT TYPE)
