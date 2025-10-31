@@ -577,15 +577,23 @@ def generate_onramp_url(request):
             # destination is crypto
             actual_coin, network = parse_coin_network(destination_currency)
             if not network:
-                resp = get_available_network(actual_coin)
-                network = resp.get("network")
+                # Use native network for BTC instead of default
+                if actual_coin == "BTC":
+                    network = "BTC"
+                else:
+                    resp = get_available_network(actual_coin)
+                    network = resp.get("network")
             fiat_currency = source_currency
         else:
             # source is crypto
             actual_coin, network = parse_coin_network(source_currency)
             if not network:
-                resp = get_available_network(actual_coin)
-                network = resp.get("network")
+                # Use native network for BTC instead of default
+                if actual_coin == "BTC":
+                    network = "BTC"
+                else:
+                    resp = get_available_network(actual_coin)
+                    network = resp.get("network")
             fiat_currency = destination_currency
 
         # Get fiatType from mapping
