@@ -534,13 +534,22 @@ def generate_onramp_url(request):
         coin_code = destination_currency.lower() if flow_type == 1 else source_currency.lower()
 
         # Prepare request body for public API
-        body = {
-            "coinCode": coin_code,
-            "network": network.lower(),
-            "fiatAmount": source_amount,
-            "fiatType": fiat_type,
-            "flowType": flow_type
-        }
+        if flow_type == 1:
+            body = {
+                "coinCode": coin_code,
+                "network": network.lower(),
+                "fiatAmount": float(source_amount),
+                "fiatType": fiat_type,
+                "flowType": flow_type
+            }
+        else:
+            body = {
+                "coinCode": coin_code,
+                "network": network.lower(),
+                "quantity": float(source_amount),
+                "fiatType": fiat_type,
+                "flowType": flow_type
+            }
 
         # Generate headers using existing helper
         headers = generate_onramp_headers(body)
@@ -572,7 +581,7 @@ def generate_onramp_url(request):
             'transaction_id': transaction_key,
             'provider': 'ONRAMP',
             'status': 'PENDING',
-            'url_hash': url_hash,  # IMPORTANT: Store this for status checks
+            'url_hash': url_hash,
             'widget_url': transaction_data.get('link'),
             'created_at': int(time.time() * 1000),
             'flow_type': 'BUY' if flow_type == 1 else 'SELL',
