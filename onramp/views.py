@@ -615,7 +615,7 @@ def generate_onramp_url(request):
             body = {
                 "coinCode": actual_coin,
                 "network": network.lower(),
-                "quantity": float(source_amount),
+                "fiatAmount": float(source_amount),
                 "fiatType": fiat_type,
                 "flowType": flow_type
             }
