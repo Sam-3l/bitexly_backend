@@ -72,6 +72,23 @@ def get_onramp_config_mappings():
         logger.error(f"Error fetching config mappings: {str(e)}")
         return {}
 
+def parse_coin_network(coin_code):
+    """
+    Parse coin code to extract actual coin and network.
+    Handles special format: USDT_TRC20, USDT_ERC20, etc.
+    
+    Returns:
+        tuple: (actual_coin_code, network) e.g., ("usdt", "trc20")
+    """
+    if "_" in coin_code:
+        parts = coin_code.split("_")
+        actual_coin = parts[0].lower()
+        network = parts[1].lower() if len(parts) > 1 else None
+        return (actual_coin, network)
+    
+    # No underscore, use the get_available_network function
+    return (coin_code.lower(), None)
+
 
 def get_fiat_type(currency_code):
     """
@@ -203,7 +220,7 @@ def get_available_network(coin_code):
 def get_onramp_quote(request):
     """
     Get quote for BUY/SELL transactions using the standard quotes API.
-    Fetches fiat type mappings dynamically from the API.
+    Supports both regular coins and network-specific coins (e.g., USDT_TRC20)
     """
     try:
         data = request.data
@@ -211,8 +228,6 @@ def get_onramp_quote(request):
         source_currency = data.get("sourceCurrencyCode", "").upper()
         destination_currency = data.get("destinationCurrencyCode", "").upper()
         source_amount = data.get("sourceAmount")
-        resp = get_available_network(destination_currency) if action == "BUY" else get_available_network(source_currency)
-        network = resp.get("network")
 
         if not all([action, source_currency, destination_currency, source_amount]):
             return Response(
@@ -223,12 +238,25 @@ def get_onramp_quote(request):
         # Determine transaction type
         txn_type = "BUY" if action == "BUY" else "SELL"
 
+        # Parse coin and network
+        if txn_type == "BUY":
+            # destination is crypto
+            actual_coin, network = parse_coin_network(destination_currency)
+            if not network:
+                resp = get_available_network(actual_coin)
+                network = resp.get("network")
+        else:
+            # source is crypto
+            actual_coin, network = parse_coin_network(source_currency)
+            if not network:
+                resp = get_available_network(actual_coin)
+                network = resp.get("network")
+
         # Prepare the request body based on transaction type
         if txn_type == "BUY":
             # For BUY: fiat -> crypto
             fiat_type = get_fiat_type(source_currency)
             if fiat_type is None:
-                # Fetch available currencies for better error message
                 config = get_onramp_config_mappings()
                 available_fiats = list(config.get("fiatSymbolMapping", {}).keys())
                 
@@ -241,8 +269,8 @@ def get_onramp_quote(request):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            # Validate crypto currency
-            coin_info = get_coin_code(destination_currency)
+            # Validate crypto currency (use actual coin without network suffix)
+            coin_info = get_coin_code(actual_coin)
             if not coin_info:
                 config = get_onramp_config_mappings()
                 available_coins = list(config.get("coinSymbolMapping", {}).keys())
@@ -250,18 +278,18 @@ def get_onramp_quote(request):
                 return Response(
                     {
                         "success": False,
-                        "message": f"Unsupported cryptocurrency: {destination_currency}",
-                        "supportedCoins": available_coins[:50]  # Limit to first 50
+                        "message": f"Unsupported cryptocurrency: {actual_coin}",
+                        "supportedCoins": available_coins[:50]
                     },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
             quote_body = {
-                "coinCode": destination_currency.lower(),  # e.g., "usdt"
-                "network": network.lower(),  # e.g., "bep20"
+                "coinCode": actual_coin,
+                "network": network.lower(),
                 "fiatAmount": float(source_amount),
                 "fiatType": fiat_type,
-                "type": 1  # 1 for ONRAMP (buy)
+                "type": 1
             }
         else:
             # For SELL: crypto -> fiat
@@ -280,7 +308,7 @@ def get_onramp_quote(request):
                 )
 
             # Validate crypto currency
-            coin_info = get_coin_code(source_currency)
+            coin_info = get_coin_code(actual_coin)
             if not coin_info:
                 config = get_onramp_config_mappings()
                 available_coins = list(config.get("coinSymbolMapping", {}).keys())
@@ -288,31 +316,29 @@ def get_onramp_quote(request):
                 return Response(
                     {
                         "success": False,
-                        "message": f"Unsupported cryptocurrency: {source_currency}",
+                        "message": f"Unsupported cryptocurrency: {actual_coin}",
                         "supportedCoins": available_coins[:50]
                     },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
             quote_body = {
-                "coinCode": source_currency.lower(),  # e.g., "usdt"
+                "coinCode": actual_coin,
                 "network": network.lower(),
-                "quantity": float(source_amount),  # Amount of crypto to sell
+                "quantity": float(source_amount),
                 "fiatType": fiat_type,
-                "type": 2  # 2 for OFFRAMP (sell)
+                "type": 2
             }
 
         # Use the quotes endpoint
         quote_url = f"{ONRAMP_API_BASE_URL}/onramp/api/v2/common/transaction/quotes"
         headers = generate_onramp_headers(quote_body)
 
-        # Log the request for debugging
         logger.info(f"Onramp Quote Request to {quote_url}: {quote_body}")
 
         quote_response = requests.post(quote_url, headers=headers, json=quote_body, timeout=30)
         quote_json = quote_response.json()
 
-        # Log the response for debugging
         logger.info(f"Onramp Quote Response: {quote_json}")
 
         if quote_json.get("status") != 1:
@@ -329,11 +355,11 @@ def get_onramp_quote(request):
 
         quote_data = quote_json.get("data", {})
 
-        # Standardize the response for your frontend
+        # Standardize the response (use original currency codes with network suffix)
         if txn_type == "BUY":
             standardized_quote = {
                 "sourceCurrency": source_currency,
-                "destinationCurrency": destination_currency.upper(),
+                "destinationCurrency": destination_currency,  # Keep original e.g., USDT_TRC20
                 "sourceAmount": source_amount,
                 "estimatedAmount": quote_data.get("quantity"),
                 "rate": quote_data.get("rate"),
@@ -354,7 +380,7 @@ def get_onramp_quote(request):
             }
         else:
             standardized_quote = {
-                "sourceCurrency": source_currency.upper(),
+                "sourceCurrency": source_currency,  # Keep original e.g., USDT_TRC20
                 "destinationCurrency": destination_currency,
                 "sourceAmount": source_amount,
                 "estimatedAmount": quote_data.get("fiatAmount"),
@@ -497,7 +523,7 @@ def get_onramp_payment_methods_by_currency(request):
 def generate_onramp_url(request):
     """
     Generate widget link for BUY/SELL flow using OnRamp public API.
-    Automatically determines fiatType from the source/destination currency.
+    Supports network-specific coins (e.g., USDT_TRC20)
     """
     try:
         data = request.data
@@ -505,8 +531,6 @@ def generate_onramp_url(request):
         source_currency = data.get("sourceCurrencyCode", "").upper()
         destination_currency = data.get("destinationCurrencyCode", "").upper()
         source_amount = data.get("sourceAmount")
-        resp = get_available_network(destination_currency) if action == "BUY" else get_available_network(source_currency)
-        network = resp.get("network")
 
         if not all([action, source_currency, destination_currency, source_amount]):
             return Response(
@@ -517,8 +541,23 @@ def generate_onramp_url(request):
         # Determine flow type: 1 -> onramp (BUY), 2 -> offramp (SELL)
         flow_type = 1 if action == "BUY" else 2
 
-        # Automatically get fiatType from mapping
-        fiat_currency = source_currency if flow_type == 1 else destination_currency
+        # Parse coin and network
+        if flow_type == 1:
+            # destination is crypto
+            actual_coin, network = parse_coin_network(destination_currency)
+            if not network:
+                resp = get_available_network(actual_coin)
+                network = resp.get("network")
+            fiat_currency = source_currency
+        else:
+            # source is crypto
+            actual_coin, network = parse_coin_network(source_currency)
+            if not network:
+                resp = get_available_network(actual_coin)
+                network = resp.get("network")
+            fiat_currency = destination_currency
+
+        # Get fiatType from mapping
         fiat_type = get_fiat_type(fiat_currency)
         if fiat_type is None:
             return Response(
@@ -530,21 +569,20 @@ def generate_onramp_url(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Determine crypto code
-        coin_code = destination_currency.lower() if flow_type == 1 else source_currency.lower()
-
         # Prepare request body for public API
         if flow_type == 1:
+            # BUY: fiatAmount is the source (what user pays)
             body = {
-                "coinCode": coin_code,
+                "coinCode": actual_coin,
                 "network": network.lower(),
                 "fiatAmount": float(source_amount),
                 "fiatType": fiat_type,
                 "flowType": flow_type
             }
         else:
+            # SELL: quantity is the crypto amount being sold
             body = {
-                "coinCode": coin_code,
+                "coinCode": actual_coin,
                 "network": network.lower(),
                 "quantity": float(source_amount),
                 "fiatType": fiat_type,
@@ -573,7 +611,7 @@ def generate_onramp_url(request):
             )
 
         transaction_data = result.get("data", {})
-        url_hash = transaction_data.get("urlHash")  # This is the key identifier
+        url_hash = transaction_data.get("urlHash")
 
         # Store transaction for tracking
         transaction_key = f"txn_onramp_{url_hash}" if url_hash else f"txn_onramp_{int(time.time())}_{flow_type}"
@@ -588,6 +626,7 @@ def generate_onramp_url(request):
             'source_currency': source_currency,
             'destination_currency': destination_currency,
             'amount': source_amount,
+            'network': network,
         }
 
         from django.core.cache import cache
