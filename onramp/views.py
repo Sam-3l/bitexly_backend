@@ -588,7 +588,7 @@ def generate_onramp_url(request):
             actual_coin, network = parse_coin_network(source_currency)
             # Force BTC to always use BTC network
             if actual_coin == "BTC":
-                network = "BTC"
+                network = "erc20"
             elif not network:
                 resp = get_available_network(actual_coin)
                 network = resp.get("network")
