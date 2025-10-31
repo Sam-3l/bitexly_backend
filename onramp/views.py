@@ -215,8 +215,6 @@ def get_available_network(coin_code):
 # ------------------------------------------------------------------
 # ✅ QUOTE ENDPOINT (STANDARD API - DYNAMIC MAPPING)
 # ------------------------------------------------------------------
-# Replace your get_onramp_quote function with this fixed version
-
 @api_view(["POST"])
 @permission_classes([])
 def get_onramp_quote(request):
