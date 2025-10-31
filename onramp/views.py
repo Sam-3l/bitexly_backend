@@ -215,6 +215,8 @@ def get_available_network(coin_code):
 # ------------------------------------------------------------------
 # ✅ QUOTE ENDPOINT (STANDARD API - DYNAMIC MAPPING)
 # ------------------------------------------------------------------
+# Replace your get_onramp_quote function with this fixed version
+
 @api_view(["POST"])
 @permission_classes([])
 def get_onramp_quote(request):
@@ -341,12 +343,35 @@ def get_onramp_quote(request):
 
         logger.info(f"Onramp Quote Response: {quote_json}")
 
+        # FIXED: Better error handling with min/max extraction
         if quote_json.get("status") != 1:
+            error_message = quote_json.get("error", "Unknown error")
+            
+            # Extract min/max amounts from error message
+            min_amount = None
+            max_amount = None
+            
+            # Parse minimum amount
+            if "minimum" in error_message.lower():
+                import re
+                min_match = re.search(r'minimum.*?(\d+\.?\d*)', error_message, re.IGNORECASE)
+                if min_match:
+                    min_amount = float(min_match.group(1))
+            
+            # Parse maximum amount
+            if "maximum" in error_message.lower():
+                import re
+                max_match = re.search(r'maximum.*?(\d+\.?\d*)', error_message, re.IGNORECASE)
+                if max_match:
+                    max_amount = float(max_match.group(1))
+            
             return Response(
                 {
                     "success": False,
-                    "message": "Quote request failed.",
-                    "details": quote_json.get("error", "Unknown error"),
+                    "message": error_message,
+                    "details": error_message,
+                    "minAmount": min_amount,
+                    "maxAmount": max_amount,
                     "apiResponse": quote_json,
                     "requestBody": quote_body
                 },
@@ -362,12 +387,16 @@ def get_onramp_quote(request):
                 "destinationCurrency": destination_currency,  # Keep original e.g., USDT_TRC20
                 "sourceAmount": source_amount,
                 "estimatedAmount": quote_data.get("quantity"),
+                "cryptoAmount": quote_data.get("quantity"),  # ADDED: For frontend compatibility
                 "rate": quote_data.get("rate"),
+                "exchangeRate": quote_data.get("rate"),  # ADDED: For frontend compatibility
                 "fees": {
                     "onrampFee": quote_data.get("onrampFee", 0),
                     "clientFee": quote_data.get("clientFee", 0),
                     "gatewayFee": quote_data.get("gatewayFee", 0),
                     "gasFee": quote_data.get("gasFee", 0),
+                    "transactionFee": quote_data.get("clientFee", 0),  # ADDED: For frontend
+                    "networkFee": quote_data.get("gasFee", 0),  # ADDED: For frontend
                 },
                 "totalFees": sum([
                     quote_data.get("onrampFee", 0),
@@ -384,12 +413,16 @@ def get_onramp_quote(request):
                 "destinationCurrency": destination_currency,
                 "sourceAmount": source_amount,
                 "estimatedAmount": quote_data.get("fiatAmount"),
+                "fiatAmount": quote_data.get("fiatAmount"),  # ADDED: For frontend compatibility
                 "rate": quote_data.get("rate"),
+                "exchangeRate": quote_data.get("rate"),  # ADDED: For frontend compatibility
                 "fees": {
                     "onrampFee": quote_data.get("onrampFee", 0),
                     "clientFee": quote_data.get("clientFee", 0),
                     "gatewayFee": quote_data.get("gatewayFee", 0),
                     "tdsFee": quote_data.get("tdsFee", 0),
+                    "transactionFee": quote_data.get("clientFee", 0),  # ADDED: For frontend
+                    "networkFee": quote_data.get("gasFee", 0),  # ADDED: For frontend
                 },
                 "totalFees": sum([
                     quote_data.get("onrampFee", 0),
