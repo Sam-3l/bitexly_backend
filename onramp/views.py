@@ -577,8 +577,8 @@ def generate_onramp_url(request):
             # destination is crypto
             actual_coin, network = parse_coin_network(destination_currency)
             # Force BTC to always use BTC network
-            if actual_coin == "BTC":
-                network = "BTC"
+            if actual_coin == "btc":
+                network = "btc"
             elif not network:
                 resp = get_available_network(actual_coin)
                 network = resp.get("network")
@@ -587,8 +587,8 @@ def generate_onramp_url(request):
             # source is crypto
             actual_coin, network = parse_coin_network(source_currency)
             # Force BTC to always use BTC network
-            if actual_coin == "BTC":
-                network = "erc20"
+            if actual_coin == "btc":
+                network = "btc"
             elif not network:
                 resp = get_available_network(actual_coin)
                 network = resp.get("network")
@@ -611,7 +611,7 @@ def generate_onramp_url(request):
             # BUY: fiatAmount is the source (what user pays)
             body = {
                 "coinCode": actual_coin,
-                "network": network.lower() if network != "BTC" else network,
+                "network": network.lower(),
                 "fiatAmount": float(source_amount),
                 "fiatType": fiat_type,
                 "flowType": flow_type
