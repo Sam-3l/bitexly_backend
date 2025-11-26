@@ -84,6 +84,8 @@ def parse_coin_network(coin_code):
         parts = coin_code.split("_")
         actual_coin = parts[0].lower()
         network = parts[1].lower() if len(parts) > 1 else None
+        if network == "tron":
+            network = "trc20"
         return (actual_coin, network)
     
     # No underscore, use the get_available_network function
