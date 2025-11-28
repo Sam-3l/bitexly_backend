@@ -40,7 +40,7 @@ def send_email(user, subject, message, code=None, action_url=None, action_text=N
         'user': user,
         'subject': subject,
         'message': message,
-        'code': code,  # OTP or verification code
+        'code': code,  # OTP or verification code.
         'action_url': action_url,  # For buttons
         'action_text': action_text,
     })
