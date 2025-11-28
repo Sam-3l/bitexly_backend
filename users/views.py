@@ -125,7 +125,7 @@ class SignupView(APIView):
             otp_code = generate_otp()
             EmailOTP.objects.create(user=serializer.email, otp=otp_code)
             # send_reg_otp_email(user, otp_code)
-            send_email(serializer,"Your OTP Code", "Use the code below to verify your account.", code=otp_code)
+            send_email(serializer,"Registration Verification Code", "Use the code below to verify your account.", code=otp_code)
             return Response({'detail': 'OTP resent to your email.'}, status=status.HTTP_200_OK)
         
         if not serializer.is_valid():
@@ -144,7 +144,7 @@ class SignupView(APIView):
 
         otp = generate_otp()
         EmailOTP.objects.create(user=user, otp=otp)
-        send_email(user,"Your OTP Code","Use the code below to verify your email.", code=otp)
+        send_email(user,"Registration Verification Code", "Use the code below to verify your email.", code=otp)
 
         return Response({'detail': 'OTP sent to your email.', 'otp': otp}, status=status.HTTP_200_OK)
 
@@ -227,7 +227,7 @@ class PasswordResetView(APIView):
                 otp_code = generate_otp()
                 EmailOTP.objects.create(user=user, otp=otp_code)
                 # send_reset_otp_email(user, otp_code)
-                send_email(user,"Your OTP Code", "Use the code below to reset your password.", code=otp_code)
+                send_email(user,"Password Recovery Verification Code", "Use the code below to reset your password.", code=otp_code)
                 return Response({"detail": "OTP resent to your email."}, status=200)
             if serializer.is_valid():
                 user = serializer.validated_data['user']
@@ -237,7 +237,7 @@ class PasswordResetView(APIView):
                     # Stage 1: Send OTP
                     otp_code = generate_otp()
                     EmailOTP.objects.create(user=user, otp=otp_code)
-                    send_email(user,"Your OTP Code", "Use the code below to reset your password", code=otp_code)  # Your email utility
+                    send_email(user,"Password Recovery Verification Code", "Use the code below to reset your password", code=otp_code)  # Your email utility
                     return Response({"detail": "OTP sent to your email.", "otp": otp_code}, status=status.HTTP_200_OK)
                 elif otp and not new_password:
                     # Stage 2: Verify OTP only
@@ -420,7 +420,7 @@ class SetPinView(APIView):
                  request.session['email'] = email
                  request.session.modified = True
                  # Send OTP via email here in real use
-                 send_email(user,"Your OTP Code", "Use the code below to set your pin", code=raw_otp)
+                 send_email(user,"Complete Your PIN Setup – OTP", "Use the code below to set your pin", code=raw_otp)
                  return Response({'detail': f'OTP sent to {email}', 'otp': raw_otp})
                  # Step 2: Verify OTP
              if not otp:

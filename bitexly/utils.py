@@ -26,9 +26,13 @@ from threading import Thread
 from django.core.mail import EmailMessage
 
 def send_email_background(subject, message, to):
-    email = EmailMessage(subject, message, 'no-reply@example.com', [to])
+    email = EmailMessage(
+        subject,
+        message,
+        'Bitexly Support <info@bitexly.com>',
+        [to]
+    )
     email.send()
-
 
     
 def send_email(user, subject, message, code=None, action_url=None, action_text=None):
@@ -44,7 +48,7 @@ def send_email(user, subject, message, code=None, action_url=None, action_text=N
     email = EmailMultiAlternatives(
         subject=subject,
         body=message,  # fallback text version
-        from_email='Bitexly <no-reply@yourdomain.com>',
+        from_email='Bitexly Support <info@bitexly.com>',
         to=[user.email]
     )
     email.attach_alternative(html_content, "text/html")
