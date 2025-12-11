@@ -62,6 +62,7 @@ INSTALLED_APPS = [
     'meld',
     'moonpay',
     'onramp',
+    'finchpay',
 
     'allauth',
     'allauth.account',
@@ -254,6 +255,10 @@ ONRAMP_API_SECRET = config("ONRAMP_API_SECRET")
 MOONPAY_PUBLISHABLE_KEY = config("MOONPAY_PUBLISHABLE_KEY")
 MOONPAY_SECRET_KEY = config("MOONPAY_SECRET_KEY")
 MOONPAY_WEBHOOK_KEY = config("MOONPAY_WEBHOOK_KEY")
+
+# FinchPay Configurations
+FINCHPAY_API_KEY = config("FINCHPAY_API_KEY")
+FINCHPAY_SECRET_KEY = config("FINCHPAY_SECRET_KEY")
 
 # Media files
 MEDIA_URL = '/media/'
