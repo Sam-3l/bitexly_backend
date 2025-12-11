@@ -9,4 +9,5 @@ urlpatterns = [
     path('webhook/', views.finchpay_webhook, name='finchpay_webhook'),    
     path('currencies/', views.get_finchpay_currencies, name='finchpay_currencies'),
     path('limits/', views.get_finchpay_limits, name='finchpay_limits'),
+    path('payment-methods/', views.get_finchpay_payment_methods, name='finchpay_payment_methods'),
 ]
