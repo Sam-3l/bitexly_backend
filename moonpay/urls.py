@@ -3,7 +3,7 @@ from . import views
 
 urlpatterns = [
     # Quote endpoint - Get price quotes for buy/sell
-    path('quote/aah/', views.get_moonpay_quote, name='moonpay_quote'),
+    path('quote/', views.get_moonpay_quote, name='moonpay_quote'),
     
     # Generate widget URL for buy/sell transactions
     path('generate-url/', views.generate_moonpay_url, name='moonpay_generate_url'),
