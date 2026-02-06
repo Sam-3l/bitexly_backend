@@ -417,11 +417,12 @@ class TransactionDetailView(APIView):
 
 
 # ============================================================================
-# EXPORT TRANSACTIONS (CSV/JSON)
+# EXPORT TRANSACTIONS (CSV/JSON) - FIXED VERSION
 # ============================================================================
 class ExportTransactionsView(APIView):
     """
     Export transactions as CSV or JSON.
+    Query param: format=csv or format=json (default: json)
     """
     permission_classes = [IsAuthenticated]
     
@@ -432,12 +433,35 @@ class ExportTransactionsView(APIView):
             # Get user transactions
             transactions = Transaction.objects.filter(user=request.user).order_by('-created_at')
             
+            # ✅ Handle empty transactions BEFORE format check
             if transactions.count() == 0:
-                return Response({
-                    "success": False,
-                    "message": "No transactions to export"
-                }, status=status.HTTP_404_NOT_FOUND)
+                if export_format == 'csv':
+                    # For CSV, return empty CSV file with just headers
+                    import csv
+                    from django.http import HttpResponse
+                    
+                    response = HttpResponse(content_type='text/csv')
+                    response['Content-Disposition'] = f'attachment; filename="transactions_{timezone.now().strftime("%Y%m%d")}.csv"'
+                    
+                    writer = csv.writer(response)
+                    writer.writerow([
+                        'Transaction ID', 'Date', 'Provider', 'Type', 'Status',
+                        'Source Currency', 'Source Amount', 'Destination Currency', 
+                        'Destination Amount', 'Exchange Rate', 'Total Fees', 'Network'
+                    ])
+                    # No data rows, just headers
+                    return response
+                else:
+                    # For JSON, return empty array
+                    return Response({
+                        "success": True,
+                        "count": 0,
+                        "transactions": [],
+                        "message": "No transactions to export",
+                        "exported_at": timezone.now().isoformat()
+                    }, status=status.HTTP_200_OK)
             
+            # ✅ Export with data
             if export_format == 'csv':
                 import csv
                 from django.http import HttpResponse
@@ -481,8 +505,22 @@ class ExportTransactionsView(APIView):
                 
         except Exception as e:
             logger.error(f"Export error: {str(e)}", exc_info=True)
-            return Response({
-                "success": False,
-                "message": "Export failed",
-                "details": str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            # ✅ Return appropriate error format based on requested format
+            export_format = request.query_params.get('format', 'json').lower()
+            if export_format == 'csv':
+                # For CSV errors, return a plain text response
+                from django.http import HttpResponse
+                response = HttpResponse(
+                    f"Export failed: {str(e)}", 
+                    content_type='text/plain', 
+                    status=500
+                )
+                return response
+            else:
+                # For JSON errors, return DRF Response
+                return Response({
+                    "success": False,
+                    "message": "Export failed",
+                    "details": str(e)
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
