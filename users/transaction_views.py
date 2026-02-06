@@ -9,6 +9,9 @@ from datetime import timedelta
 from decimal import Decimal
 import logging
 
+from .permisssion import IsTrader
+from .models import TransactionStats
+from .serializers import TransactionStatsSerializer
 from users.models import Transaction, Users
 from users.serializers import (
     TransactionSerializer,
@@ -212,6 +215,74 @@ class TransactionHistoryView(APIView):
                 "message": "Failed to fetch transaction history",
                 "details": str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ============================================================================
+# TRANSACTION STATISTICS VIEW
+# ============================================================================
+class TransactionStatisticsView(APIView):
+    """
+    Get comprehensive transaction statistics for the user.
+    Includes:
+    - Total transactions (all, completed, failed, pending)
+    - Breakdown by type (buy, sell, swap)
+    - Breakdown by provider
+    - Total fees paid
+    - Recent activity
+    """
+    permission_classes = [IsAuthenticated, IsTrader]
+    
+    def get(self, request):
+        try:
+            user = request.user
+            
+            # Get or create stats object
+            stats, created = TransactionStats.objects.get_or_create(user=user)
+            
+            # Update stats
+            stats.update_stats()
+            
+            # Get additional breakdowns
+            user_txns = Transaction.objects.filter(user=user)
+            
+            # Provider breakdown
+            provider_breakdown = user_txns.values('provider').annotate(
+                count=Count('id'),
+                completed=Count('id', filter=Q(status='COMPLETED'))
+            ).order_by('-count')
+            
+            # Monthly breakdown (last 6 months)
+            six_months_ago = timezone.now() - timedelta(days=180)
+            monthly_data = user_txns.filter(
+                created_at__gte=six_months_ago
+            ).extra(
+                select={'month': "DATE_TRUNC('month', created_at)"}
+            ).values('month').annotate(
+                count=Count('id'),
+                completed=Count('id', filter=Q(status='COMPLETED'))
+            ).order_by('month')
+            
+            # Recent transactions (last 7 days)
+            seven_days_ago = timezone.now() - timedelta(days=7)
+            recent_count = user_txns.filter(created_at__gte=seven_days_ago).count()
+            
+            # Response data
+            stats_data = TransactionStatsSerializer(stats).data
+            stats_data['provider_breakdown'] = list(provider_breakdown)
+            stats_data['monthly_data'] = list(monthly_data)
+            stats_data['recent_transactions_count'] = recent_count
+            
+            return Response({
+                "success": True,
+                "statistics": stats_data
+            })
+        
+        except Exception as e:
+            logger.error(f"Statistics error: {str(e)}", exc_info=True)
+            return Response(
+                {"success": False, "message": "Failed to fetch statistics", "details": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 # ============================================================================
