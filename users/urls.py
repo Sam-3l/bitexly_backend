@@ -65,5 +65,4 @@ urlpatterns = [
     path("api/changelly/confirm-transaction/", ConfirmTransaction.as_view(), name="confirm-transaction"),
     path("api/changelly/get-coins/", GetCoins.as_view(), name="get-coins"),
     path("quotes/onRamp/", QuoteAPIView.as_view(), name="get_quotes"),
-
 ]

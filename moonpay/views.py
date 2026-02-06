@@ -9,10 +9,14 @@ from functools import lru_cache
 
 from django.core.cache import cache
 from django.conf import settings
+from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
+
+from users.transaction_helpers import create_transaction_record, should_save_transaction
+from users.models import Transaction
 
 # Setup logger
 logger = logging.getLogger(__name__)
@@ -262,7 +266,7 @@ def get_moonpay_quote(request):
 
 
 # ------------------------------------------------------------------
-# ✅ GET PAYMENT METHODS (Similar to OnRamp's structure)
+# ✅ GET PAYMENT METHODS
 # ------------------------------------------------------------------
 @api_view(["GET"])
 @permission_classes([])
@@ -335,9 +339,6 @@ def get_moonpay_payment_methods(request):
         )
 
 
-# ------------------------------------------------------------------
-# ✅ GET SUPPORTED CURRENCIES
-# ------------------------------------------------------------------
 @api_view(["GET"])
 @permission_classes([])
 def get_moonpay_currencies_endpoint(request):
@@ -367,19 +368,11 @@ def get_moonpay_currencies_endpoint(request):
         )
 
 
-# ------------------------------------------------------------------
-# ✅ GET CURRENCY LIMITS
-# ------------------------------------------------------------------
 @api_view(["GET"])
 @permission_classes([])
 def get_currency_limits(request):
     """
     Get min/max limits for a specific currency.
-    
-    Query params:
-        currencyCode: Currency code (e.g., 'btc', 'eth')
-        baseCurrencyCode: Base currency code (e.g., 'usd', 'eur')
-        paymentMethod: Payment method (optional)
     """
     try:
         currency_code = request.query_params.get("currencyCode", "").lower()
@@ -422,25 +415,14 @@ def get_currency_limits(request):
         )
 
 
-# ------------------------------------------------------------------
-# ✅ GENERATE WIDGET URL
-# ------------------------------------------------------------------
+# ============================================================================
+# ✅ UPDATED: generate_moonpay_url - Now saves to database for auth users
+# ============================================================================
 @api_view(["POST"])
 @permission_classes([])
 def generate_moonpay_url(request):
     """
     Generate a signed MoonPay widget URL for BUY or SELL.
-    
-    Expected request body:
-    {
-        "action": "BUY" or "SELL",
-        "sourceCurrencyCode": "USD" or "BTC",
-        "destinationCurrencyCode": "BTC" or "USD",
-        "sourceAmount": 100,
-        "walletAddress": "0x..." (optional for BUY),
-        "externalCustomerId": "user123" (optional),
-        "redirectURL": "https://bitexly.com/success" (optional)
-    }
     """
     try:
         data = request.data
@@ -526,10 +508,28 @@ def generate_moonpay_url(request):
 
         logger.info(f"Generated MoonPay URL for {action}: {signed_url}")
 
-        # Store transaction for tracking
+        # ✅ CREATE DATABASE RECORD (if authenticated)
+        db_transaction = None
+        if should_save_transaction(request):
+            db_transaction = create_transaction_record(
+                user=request.user,
+                provider='MOONPAY',
+                transaction_type=action.upper(),
+                source_currency=source_currency,
+                source_amount=source_amount,
+                destination_currency=destination_currency,
+                wallet_address=wallet_address,
+                widget_url=signed_url,
+                provider_data={
+                    'external_customer_id': external_customer_id,
+                }
+            )
+
+        # ✅ STORE IN CACHE
         transaction_key = f"txn_moonpay_{int(time.time())}_{action}"
         transaction_record = {
             'transaction_id': transaction_key,
+            'db_id': db_transaction.id if db_transaction else None,  # ✅ Link to DB
             'provider': 'MOONPAY',
             'status': 'PENDING',
             'widget_url': signed_url,
@@ -540,11 +540,10 @@ def generate_moonpay_url(request):
             'amount': source_amount,
         }
 
-        from django.core.cache import cache
         cache.set(transaction_key, transaction_record, timeout=86400)
 
-        # Track all transactions for this customer
-        if external_customer_id:  # You need to pass this as externalCustomerId parameter
+        # Track customer transactions
+        if external_customer_id:
             customer_txns = cache.get(f"customer_{external_customer_id}_all") or []
             customer_txns.append(transaction_key)
             cache.set(f"customer_{external_customer_id}_all", customer_txns, timeout=86400)
@@ -554,7 +553,7 @@ def generate_moonpay_url(request):
                 "success": True,
                 "widgetUrl": signed_url,
                 "paymentUrl": signed_url,
-                "transactionId": transaction_key,
+                "transactionId": db_transaction.transaction_id if db_transaction else transaction_key,
                 "action": action,
             },
             status=status.HTTP_200_OK,
@@ -568,17 +567,11 @@ def generate_moonpay_url(request):
         )
 
 
-# ------------------------------------------------------------------
-# ✅ GET TRANSACTION STATUS (Using Transaction ID)
-# ------------------------------------------------------------------
 @api_view(["GET"])
 @permission_classes([])
 def get_transaction_status(request, transaction_id):
     """
     Get the status of a MoonPay transaction.
-    
-    URL params:
-        transaction_id: MoonPay transaction ID
     """
     try:
         url = f"{MOONPAY_API_BASE_URL}/v1/transactions/{transaction_id}"
@@ -607,15 +600,11 @@ def get_transaction_status(request, transaction_id):
         )
 
 
-# ------------------------------------------------------------------
-# ✅ GET IP ADDRESS INFO (User's location/country)
-# ------------------------------------------------------------------
 @api_view(["GET"])
 @permission_classes([])
 def get_ip_address_info(request):
     """
     Get information about the user's IP address (country, state, etc.)
-    Useful for determining available payment methods and currencies.
     """
     try:
         url = f"{MOONPAY_API_BASE_URL}/v4/ip_address"
@@ -642,7 +631,11 @@ def get_ip_address_info(request):
             {"success": False, "message": "Internal server error", "details": str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
-    
+
+
+# ============================================================================
+# moonpay_webhook - Now updates database for auth users
+# ============================================================================
 @api_view(['POST'])
 @permission_classes([])
 def moonpay_webhook(request):
@@ -656,7 +649,7 @@ def moonpay_webhook(request):
         # MoonPay sends their transaction ID
         moonpay_txn_id = data.get('externalTransactionId') or data.get('id')
         external_customer_id = data.get('externalCustomerId')
-        status = data.get('status', '').upper()
+        status_value = data.get('status', '').upper()
         
         status_mapping = {
             'COMPLETED': 'COMPLETED',
@@ -667,7 +660,7 @@ def moonpay_webhook(request):
             'WAITINGCAPTURE': 'PENDING'
         }
         
-        mapped_status = status_mapping.get(status, 'PENDING')
+        mapped_status = status_mapping.get(status_value, 'PENDING')
         
         # Try to find transaction by customer ID (similar to Meld)
         if external_customer_id:
@@ -681,10 +674,34 @@ def moonpay_webhook(request):
                     transaction_record['status'] = mapped_status
                     transaction_record['updated_at'] = int(time.time() * 1000)
                     transaction_record['webhook_data'] = data
-                    transaction_record['provider_status'] = status
+                    transaction_record['provider_status'] = status_value
                     transaction_record['moonpay_txn_id'] = moonpay_txn_id
                     
                     cache.set(txn_key, transaction_record, timeout=86400)
+                    
+                    # ✅ UPDATE DATABASE (NEW)
+                    db_id = transaction_record.get('db_id')
+                    if db_id:
+                        try:
+                            txn = Transaction.objects.get(id=db_id)
+                            txn.status = mapped_status
+                            
+                            # Update provider_data with webhook info
+                            if not txn.provider_data:
+                                txn.provider_data = {}
+                            txn.provider_data['webhook_data'] = data
+                            txn.provider_data['moonpay_txn_id'] = moonpay_txn_id
+                            
+                            if mapped_status == 'COMPLETED':
+                                txn.completed_at = timezone.now()
+                            
+                            txn.save()
+                            
+                            logger.info(f"✅ Updated DB transaction {db_id} to {mapped_status}")
+                            
+                        except Transaction.DoesNotExist:
+                            logger.error(f"❌ DB transaction {db_id} not found")
+                    
                     logger.info(f"✅ Updated MoonPay transaction {txn_key} to {mapped_status}")
                     break
         

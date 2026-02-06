@@ -10,10 +10,15 @@ from functools import lru_cache
 import requests
 from django.core.cache import cache
 from django.conf import settings
+from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
+
+# ✅ ADD THESE IMPORTS
+from users.transaction_helpers import create_transaction_record, should_save_transaction
+from users.models import Transaction
 
 # Setup logger
 logger = logging.getLogger(__name__)
@@ -41,7 +46,6 @@ def generate_wallet_signature(email, wallet_address, wallet_extra, secret_key):
     """
     Generate HMAC-SHA256 signature for wallet address prefilling.
     Formula: HMAC-SHA256(email + wallet_address + wallet_extra, secret_key)
-    If email or wallet_extra are not used, pass empty string.
     """
     payload = f"{email}{wallet_address}{wallet_extra}"
     signature = hmac.new(
@@ -56,9 +60,6 @@ def parse_coin_network(coin_code):
     """
     Parse coin code to extract actual coin and network.
     Handles format: USDT_TRC20, USDT_ERC20, BTC, etc.
-    
-    Returns:
-        tuple: (coin, network) e.g., ("USDT", "TRC20") or ("BTC", None)
     """
     coin_code = coin_code.upper()
     
@@ -71,7 +72,6 @@ def parse_coin_network(coin_code):
 
         return parts[0], network
     
-    # For coins without network suffix, return None for network
     return (coin_code, None)
 
 
@@ -79,7 +79,6 @@ def parse_coin_network(coin_code):
 def get_finchpay_currencies_cached():
     """
     Fetch and cache currencies from FinchPay API.
-    Cache persists until server restart (using lru_cache).
     """
     try:
         headers = get_finchpay_headers()
@@ -96,15 +95,11 @@ def get_finchpay_currencies_cached():
         return []
 
 
-# ------------------------------------------------------------------
-# ✅ GET ALL CURRENCIES FROM FINCHPAY API
-# ------------------------------------------------------------------
 @api_view(["GET"])
 @permission_classes([])
 def get_finchpay_currencies(request):
     """
     Fetch all supported currencies from FinchPay API.
-    Returns both fiat and crypto currencies with their networks.
     """
     try:
         currencies_data = get_finchpay_currencies_cached()
@@ -115,7 +110,7 @@ def get_finchpay_currencies(request):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         
-        # Organize data for easier consumption
+        # Organize data
         fiat_currencies = []
         crypto_currencies = {}
         payment_methods_by_currency = {}
@@ -155,15 +150,11 @@ def get_finchpay_currencies(request):
         )
 
 
-# ------------------------------------------------------------------
-# ✅ GET CURRENCY LIMITS FROM FINCHPAY API
-# ------------------------------------------------------------------
 @api_view(["GET"])
 @permission_classes([])
 def get_finchpay_limits(request):
     """
     Get min/max limits for a specific currency pair from FinchPay API.
-    Query params: from_currency, to_currency, to_network (optional), payment_method (optional)
     """
     try:
         from_currency = request.GET.get('from_currency', '').upper()
@@ -219,15 +210,11 @@ def get_finchpay_limits(request):
         )
 
 
-# ------------------------------------------------------------------
-# ✅ GET REAL QUOTE FROM FINCHPAY API
-# ------------------------------------------------------------------
 @api_view(["POST"])
 @permission_classes([])
 def get_finchpay_quote(request):
     """
     Get REAL exchange rate quote from FinchPay API.
-    Uses the /v1/estimates endpoint to get actual rates.
     """
     try:
         data = request.data
@@ -243,13 +230,11 @@ def get_finchpay_quote(request):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # FinchPay API currently only supports BUY (fiat -> crypto) through the estimates endpoint
-        # SELL support exists in the widget but not confirmed in the API
         if action != "BUY":
             return Response(
                 {
                     "success": False,
-                    "message": "FinchPay API currently only supports BUY (fiat to crypto) quotes. SELL functionality may be available through widget but not confirmed via API. Contact FinchPay support for offramp requirements."
+                    "message": "FinchPay API currently only supports BUY (fiat to crypto) quotes."
                 },
                 status=status.HTTP_400_BAD_REQUEST
             )
@@ -282,7 +267,6 @@ def get_finchpay_quote(request):
             error_data = response.json() if response.text else {}
             logger.error(f"FinchPay estimate API error: {response.status_code} - {response.text}")
             
-            # Parse error message for min/max amounts
             error_message = error_data.get("message", "Failed to get quote from FinchPay")
             min_amount = None
             max_amount = None
@@ -314,7 +298,7 @@ def get_finchpay_quote(request):
         estimate_data = response.json()
         logger.info(f"FinchPay estimate response: {estimate_data}")
         
-        # Standardize response format for BUY
+        # Standardize response
         standardized_quote = {
             "sourceCurrency": source_currency,
             "destinationCurrency": destination_currency,
@@ -357,9 +341,9 @@ def get_finchpay_quote(request):
         )
 
 
-# ------------------------------------------------------------------
-# ✅ GENERATE FINCHPAY WIDGET URL
-# ------------------------------------------------------------------
+# ============================================================================
+# ✅ UPDATED: generate_finchpay_url - Now saves to database for auth users
+# ============================================================================
 @api_view(["POST"])
 @permission_classes([])
 def generate_finchpay_url(request):
@@ -388,13 +372,11 @@ def generate_finchpay_url(request):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # NOTE: FinchPay API SELL support is not confirmed
-        # Widget may support it, but estimates API does not accept crypto as from_currency
         if action == "SELL":
             return Response(
                 {
                     "success": False,
-                    "message": "FinchPay SELL (crypto to fiat) is not supported through the API at this time. Please use BUY transactions only or contact FinchPay support for offramp options."
+                    "message": "FinchPay SELL (crypto to fiat) is not supported through the API at this time."
                 },
                 status=status.HTTP_400_BAD_REQUEST
             )
@@ -403,7 +385,7 @@ def generate_finchpay_url(request):
         coin, network = parse_coin_network(destination_currency)
         fiat_currency = source_currency
 
-        # Generate external_id for tracking (UUID, 36 characters)
+        # Generate external_id for tracking
         external_id = str(uuid.uuid4())
 
         # Build widget URL parameters
@@ -415,7 +397,6 @@ def generate_finchpay_url(request):
             "external_id": external_id
         }
 
-        # Add network if specified
         if network:
             params["n"] = network
 
@@ -440,10 +421,31 @@ def generate_finchpay_url(request):
         # Build the complete widget URL
         widget_url = f"{FINCHPAY_WIDGET_BASE_URL}/payment_method?{urlencode(params)}"
 
-        # Store transaction for tracking
+        # CREATE DATABASE RECORD (if authenticated)
+        db_transaction = None
+        if should_save_transaction(request):
+            db_transaction = create_transaction_record(
+                user=request.user,
+                provider='FINCHPAY',
+                transaction_type=action.upper(),
+                source_currency=source_currency,
+                source_amount=source_amount,
+                destination_currency=destination_currency,
+                network=network,
+                wallet_address=wallet_address,
+                widget_url=widget_url,
+                provider_transaction_id=external_id,
+                provider_data={
+                    'coin': coin,
+                    'email': email,
+                }
+            )
+
+        # STORE IN CACHE
         transaction_key = f"txn_finchpay_{external_id}"
         transaction_record = {
             'transaction_id': transaction_key,
+            'db_id': db_transaction.id if db_transaction else None,  # ✅ Link to DB
             'external_id': external_id,
             'provider': 'FINCHPAY',
             'status': 'PENDING',
@@ -468,7 +470,7 @@ def generate_finchpay_url(request):
                 "success": True,
                 "widgetUrl": widget_url,
                 "paymentUrl": widget_url,
-                "transactionId": transaction_key,
+                "transactionId": db_transaction.transaction_id if db_transaction else transaction_key,
                 "externalId": external_id,
                 "data": {
                     "widgetUrl": widget_url,
@@ -490,9 +492,6 @@ def generate_finchpay_url(request):
         )
 
 
-# ------------------------------------------------------------------
-# ✅ GET TRANSACTION STATUS FROM FINCHPAY API
-# ------------------------------------------------------------------
 @api_view(['POST'])
 @permission_classes([])
 def get_finchpay_transaction_status(request):
@@ -511,7 +510,6 @@ def get_finchpay_transaction_status(request):
         
         headers = get_finchpay_headers()
         
-        # Prefer external_id lookup
         if external_id:
             url = f"{FINCHPAY_API_BASE_URL}/v1/transaction/external/{external_id}"
             logger.info(f"Checking FinchPay transaction by external_id: {external_id}")
@@ -524,7 +522,6 @@ def get_finchpay_transaction_status(request):
         if response.status_code == 200:
             transaction_data = response.json()
             
-            # Map FinchPay status to standardized status
             status_mapping = {
                 'CREATED': 'PENDING',
                 'PROCESSING': 'PENDING',
@@ -567,8 +564,7 @@ def get_finchpay_transaction_status(request):
             return Response(
                 {
                     "success": False,
-                    "message": "Transaction not found",
-                    "details": "Transaction may not exist or external_id is incorrect"
+                    "message": "Transaction not found"
                 },
                 status=status.HTTP_404_NOT_FOUND
             )
@@ -592,36 +588,14 @@ def get_finchpay_transaction_status(request):
         )
 
 
-# ------------------------------------------------------------------
-# ✅ FINCHPAY WEBHOOK HANDLER
-# ------------------------------------------------------------------
+# ============================================================================
+# Finchpay_webhook - Now updates database for auth users
+# ============================================================================
 @api_view(['POST'])
 @permission_classes([])
 def finchpay_webhook(request):
     """
     Handle FinchPay webhook notifications.
-    Verifies x-signature header and updates transaction status.
-    
-    Webhook payload structure:
-    {
-      "id": "transaction_id",
-      "status": "COMPLETE",
-      "partner_key": "your_key",
-      "amount_from": "100",
-      "asset_from": "EUR",
-      "asset_from_extra": null,
-      "amount_to": "109.58",
-      "asset_to": "USDT",
-      "asset_network_to": "TRC20",
-      "asset_to_extra": null,
-      "partner_profit_amount": "2.38",
-      "partner_profit_currency": "EUR",
-      "event_time": "2023-10-11T10:14:14.491786009Z",
-      "external_id": "uuid",
-      "transaction_hash": "blockchain_hash",
-      "payment_method": "card",
-      "side": "buy"
-    }
     """
     try:
         # Get the raw body for signature verification
@@ -646,8 +620,6 @@ def finchpay_webhook(request):
         
         if received_signature != computed_signature:
             logger.warning(f"❌ Invalid FinchPay webhook signature")
-            logger.warning(f"Received: {received_signature}")
-            logger.warning(f"Computed: {computed_signature}")
             return Response(
                 {"success": False, "message": "Invalid signature"},
                 status=status.HTTP_401_UNAUTHORIZED
@@ -661,7 +633,6 @@ def finchpay_webhook(request):
         finchpay_transaction_id = data.get('id')
         webhook_status = data.get('status', '').upper()
         external_id = data.get('external_id')
-        partner_key = data.get('partner_key')
         
         # Status mapping
         status_mapping = {
@@ -703,31 +674,39 @@ def finchpay_webhook(request):
                 transaction_record['side'] = data.get('side')
                 
                 cache.set(transaction_key, transaction_record, timeout=86400)
+                
+                # ✅ UPDATE DATABASE (NEW)
+                db_id = transaction_record.get('db_id')
+                if db_id:
+                    try:
+                        txn = Transaction.objects.get(id=db_id)
+                        txn.status = mapped_status
+                        txn.transaction_hash = data.get('transaction_hash')
+                        txn.payment_method = data.get('payment_method')
+                        
+                        # Update provider_data with webhook info
+                        if not txn.provider_data:
+                            txn.provider_data = {}
+                        txn.provider_data['webhook_data'] = data
+                        txn.provider_data['finchpay_transaction_id'] = finchpay_transaction_id
+                        txn.provider_data['partner_profit'] = {
+                            'amount': data.get('partner_profit_amount'),
+                            'currency': data.get('partner_profit_currency')
+                        }
+                        
+                        if mapped_status == 'COMPLETED':
+                            txn.completed_at = timezone.now()
+                        
+                        txn.save()
+                        
+                        logger.info(f"✅ Updated DB transaction {db_id} to {mapped_status}")
+                        
+                    except Transaction.DoesNotExist:
+                        logger.error(f"❌ DB transaction {db_id} not found")
+                
                 logger.info(f"✅ Updated FinchPay transaction {transaction_key} to {mapped_status}")
             else:
                 logger.warning(f"⚠️ Transaction not found in cache for external_id: {external_id}")
-                logger.info("Creating new cache entry from webhook data")
-                
-                # Create cache entry from webhook data
-                new_record = {
-                    'transaction_id': transaction_key,
-                    'external_id': external_id,
-                    'provider': 'FINCHPAY',
-                    'status': mapped_status,
-                    'created_at': int(time.time() * 1000),
-                    'updated_at': int(time.time() * 1000),
-                    'webhook_data': data,
-                    'provider_status': webhook_status,
-                    'finchpay_transaction_id': finchpay_transaction_id,
-                    'transaction_hash': data.get('transaction_hash'),
-                    'payment_method': data.get('payment_method'),
-                    'amount_from': data.get('amount_from'),
-                    'amount_to': data.get('amount_to'),
-                    'asset_from': data.get('asset_from'),
-                    'asset_to': data.get('asset_to'),
-                    'asset_network_to': data.get('asset_network_to')
-                }
-                cache.set(transaction_key, new_record, timeout=86400)
         else:
             logger.warning("⚠️ No external_id in FinchPay webhook payload")
         
@@ -744,19 +723,13 @@ def finchpay_webhook(request):
         )
 
 
-# ------------------------------------------------------------------
-# ✅ GET PAYMENT METHODS (HELPER ENDPOINT)
-# ------------------------------------------------------------------
 @api_view(["GET"])
 @permission_classes([])
 def get_finchpay_payment_methods(request):
     """
-    Return supported payment methods based on cached currency data.
-    This is a helper endpoint for frontend to know available payment methods.
+    Return supported payment methods.
     """
     try:
-        # Payment methods are typically tied to fiat currencies
-        # This is a convenience endpoint
         payment_methods = {
             "card": "Credit/Debit Cards",
             "sepa": "SEPA Bank Transfer",

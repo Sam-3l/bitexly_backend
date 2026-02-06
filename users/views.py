@@ -24,6 +24,17 @@ import hashlib
 import json
 from .utils import sign_url
 import base64
+from users.transaction_helpers import create_transaction_record, should_save_transaction
+from users.models import Transaction
+import hashlib
+import time
+import logging
+from django.core.cache import cache
+from django.utils import timezone
+from users.models import Transaction
+from users.transaction_helpers import create_transaction_record, should_save_transaction
+
+logger = logging.getLogger(__name__)
 
 class MoonPayOnrampURLView(APIView):
     """
@@ -952,6 +963,9 @@ class MeldWebhookView(APIView):
 
 
 class ChangellyExchangeAmountView(APIView):
+    """
+    Get exchange amount estimate from Changelly.
+    """
     def post(self, request):
         from_currency = request.data.get("from")
         to_currency = request.data.get("to")
@@ -1022,7 +1036,7 @@ class ChangellyExchangeAmountView(APIView):
                         )
                         
                 except Exception as pair_error:
-                    print(f"Error fetching pair params: {pair_error}")
+                    logger.error(f"Error fetching pair params: {pair_error}")
                     return Response(
                         {
                             "error": "Unable to get exchange rate. Please try a different amount or pair.",
@@ -1033,36 +1047,49 @@ class ChangellyExchangeAmountView(APIView):
             
             return Response({"result": result}, status=status.HTTP_200_OK)
             
-        except ApiException as e:
-            # Handle Changelly API specific errors
-            return Response(
-                {"error": e.message, "code": e.code},
-                status=status.HTTP_400_BAD_REQUEST
-            )
         except Exception as e:
-            print(f"Unexpected error: {e}")
+            logger.error(f"Changelly exchange amount error: {str(e)}", exc_info=True)
             return Response(
                 {"error": str(e)}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-        
+
+
 class ValidateWallet(APIView):
+    """
+    Validate wallet address for a specific currency.
+    """
     def post(self, request):
         currency = request.data.get("currency")
         address = request.data.get("wallet_address")
 
         if not (currency and address):
-          return Response(
-              {"error": "currency and address are required"},
-              status=status.HTTP_400_BAD_REQUEST,
-          )
+            return Response(
+                {"error": "currency and address are required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
         try:
             result = api.validate_address(currency, address)
-            return Response({"result": result},status=status.HTTP_200_OK)
+            return Response({"result": result}, status=status.HTTP_200_OK)
         except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+            logger.error(f"Changelly validate wallet error: {str(e)}", exc_info=True)
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+# ============================================================================
+# CreateTransaction - Now saves to database for authenticated users
+# ============================================================================
 class CreateTransaction(APIView):
+    """
+    Changelly create transaction for SWAP.
+    Now saves to database for authenticated users.
+    """
+    permission_classes = []  # Allow non-authenticated
+    
     def post(self, request):
         from_currency = request.data.get("from")
         to_currency = request.data.get("to")
@@ -1076,34 +1103,209 @@ class CreateTransaction(APIView):
             )
 
         try:
+            # Create transaction with Changelly
             result = api.create_transaction(from_currency, to_currency, amount, address)
-            return Response({"result": result},status=status.HTTP_200_OK)
+            
+            changelly_txn_id = result.get('id')
+            
+            # ✅ CREATE DATABASE RECORD (if authenticated)
+            db_transaction = None
+            if should_save_transaction(request):
+                db_transaction = create_transaction_record(
+                    user=request.user,
+                    provider='CHANGELLY',
+                    transaction_type='SWAP',
+                    source_currency=from_currency.upper(),
+                    source_amount=amount,
+                    destination_currency=to_currency.upper(),
+                    wallet_address=address,
+                    provider_transaction_id=changelly_txn_id,
+                    provider_data={
+                        'payinAddress': result.get('payinAddress'),
+                        'payoutAddress': result.get('payoutAddress'),
+                        'payinExtraId': result.get('payinExtraId'),
+                        'changelly_result': result
+                    }
+                )
+            
+            # ✅ STORE IN CACHE FOR TRACKING
+            timestamp = int(time.time() * 1000)
+            transaction_key = f"txn_changelly_{changelly_txn_id}"
+            
+            transaction_record = {
+                'transaction_id': transaction_key,
+                'db_id': db_transaction.id if db_transaction else None,  # ✅ Link to DB
+                'provider': 'CHANGELLY',
+                'status': 'PENDING',
+                'created_at': timestamp,
+                'changelly_txn_id': changelly_txn_id,
+                'source_currency': from_currency.upper(),
+                'destination_currency': to_currency.upper(),
+                'amount': amount,
+                'wallet_address': address,
+                'payin_address': result.get('payinAddress'),
+                'payout_address': result.get('payoutAddress'),
+                'payin_extra_id': result.get('payinExtraId'),
+            }
+            
+            cache.set(transaction_key, transaction_record, timeout=86400)
+            
+            # Also store by Changelly ID for easy lookup
+            cache.set(f"changelly_id_{changelly_txn_id}", transaction_key, timeout=86400)
+            
+            # ✅ Enhance response with our transaction ID
+            enhanced_result = result.copy()
+            if db_transaction:
+                enhanced_result['ourTransactionId'] = db_transaction.transaction_id
+                enhanced_result['transactionId'] = db_transaction.transaction_id
+            
+            logger.info(f"✅ Created Changelly transaction: {changelly_txn_id} (DB: {db_transaction.id if db_transaction else 'none'})")
+            
+            return Response(
+                {"result": enhanced_result},
+                status=status.HTTP_200_OK
+            )
+            
         except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+            logger.error(f"Changelly create transaction error: {str(e)}", exc_info=True)
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+# ============================================================================
+# ConfirmTransaction - Updates database when frontend polls status
+# ============================================================================
 class ConfirmTransaction(APIView):
+    """
+    Get transaction status from Changelly.
+    ✅ CRITICAL: Also updates our database with the latest status!
+    This is called every 10 seconds by the frontend during polling.
+    """
+    permission_classes = []  # Allow non-authenticated (for public tracking)
+    
     def post(self, request):
         transaction_id = request.data.get("transaction_id")
 
         if not transaction_id:
             return Response(
-                {"error": "transaction id is required"},
+                {"error": "transaction_id is required"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         try:
+            # Get status from Changelly
             result = api.verify_transaction(transaction_id)
-            return Response({"result": result},status=status.HTTP_200_OK)
+            
+            changelly_status = result.get('status', '').lower() if isinstance(result, dict) else str(result).lower()
+            
+            # Map Changelly status to our internal status
+            status_mapping = {
+                'waiting': 'PENDING',
+                'confirming': 'PENDING',
+                'exchanging': 'PENDING',
+                'sending': 'PENDING',
+                'finished': 'COMPLETED',
+                'success': 'COMPLETED',
+                'completed': 'COMPLETED',
+                'failed': 'FAILED',
+                'refunded': 'FAILED',
+                'hold': 'PENDING',
+                'expired': 'FAILED',
+            }
+            
+            mapped_status = status_mapping.get(changelly_status, 'PENDING')
+            
+            # ✅ UPDATE CACHE
+            transaction_key = cache.get(f"changelly_id_{transaction_id}")
+            if not transaction_key:
+                transaction_key = f"txn_changelly_{transaction_id}"
+            
+            transaction_record = cache.get(transaction_key)
+            
+            if transaction_record:
+                # Update cache record
+                transaction_record['status'] = mapped_status
+                transaction_record['updated_at'] = int(time.time() * 1000)
+                transaction_record['last_status_check'] = result
+                transaction_record['changelly_status'] = changelly_status
+                
+                # Add payout hash if available
+                if isinstance(result, dict):
+                    if result.get('payoutHash'):
+                        transaction_record['payout_hash'] = result.get('payoutHash')
+                    if result.get('payoutHashLink'):
+                        transaction_record['payout_hash_link'] = result.get('payoutHashLink')
+                
+                cache.set(transaction_key, transaction_record, timeout=86400)
+                
+                # ✅ UPDATE DATABASE (CRITICAL!)
+                db_id = transaction_record.get('db_id')
+                if db_id:
+                    try:
+                        txn = Transaction.objects.get(id=db_id)
+                        
+                        # Only update if status actually changed
+                        if txn.status != mapped_status:
+                            txn.status = mapped_status
+                            
+                            # Update provider_data with latest status
+                            if not txn.provider_data:
+                                txn.provider_data = {}
+                            txn.provider_data['latest_status'] = result
+                            txn.provider_data['changelly_status'] = changelly_status
+                            txn.provider_data['last_checked'] = timezone.now().isoformat()
+                            
+                            # Add payout hash if completed
+                            if isinstance(result, dict):
+                                if result.get('payoutHash'):
+                                    txn.transaction_hash = result.get('payoutHash')
+                                    txn.provider_data['payoutHash'] = result.get('payoutHash')
+                                if result.get('payoutHashLink'):
+                                    txn.provider_data['payoutHashLink'] = result.get('payoutHashLink')
+                            
+                            # Set completed timestamp
+                            if mapped_status == 'COMPLETED' and not txn.completed_at:
+                                txn.completed_at = timezone.now()
+                            
+                            txn.save()
+                            
+                            logger.info(f"✅ Updated Changelly DB transaction {db_id}: {changelly_status} -> {mapped_status}")
+                        else:
+                            logger.debug(f"🔄 Changelly transaction {db_id} status unchanged: {mapped_status}")
+                        
+                    except Transaction.DoesNotExist:
+                        logger.error(f"❌ DB transaction {db_id} not found for Changelly ID {transaction_id}")
+                else:
+                    logger.debug(f"⚠️ No DB record for Changelly transaction {transaction_id} (non-authenticated user)")
+            else:
+                logger.warning(f"⚠️ No cached transaction found for Changelly ID: {transaction_id}")
+            
+            return Response({"result": result}, status=status.HTTP_200_OK)
+            
         except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+            logger.error(f"Changelly confirm transaction error: {str(e)}", exc_info=True)
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
 class GetCoins(APIView):
+    """
+    Get all supported currencies from Changelly.
+    """
     def get(self, request, *args, **kwargs):
         try:
             result = api.get_currencies()
             return Response({"result": result}, status=status.HTTP_200_OK)
         except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            logger.error(f"Changelly get coins error: {str(e)}", exc_info=True)
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 API_KEY = settings.ONRAMP_API_KEY
 API_SECRET = settings.ONRAMP_API_SECRET

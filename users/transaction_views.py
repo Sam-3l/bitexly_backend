@@ -9,14 +9,11 @@ from datetime import timedelta
 from decimal import Decimal
 import logging
 
-from .models import Transaction, TransactionStats, Users
-from .serializers import (
+from users.models import Transaction, Users
+from users.serializers import (
     TransactionSerializer,
     TransactionListSerializer,
-    TransactionStatsSerializer,
-    QuickStatsSerializer
 )
-from .permisssion import IsTrader
 
 logger = logging.getLogger(__name__)
 
@@ -31,105 +28,282 @@ class TransactionPagination(PageNumberPagination):
 
 
 # ============================================================================
-# TRANSACTION HISTORY VIEW (Enhanced with Filters)
+# RECENT TRANSACTIONS VIEW
+# ============================================================================
+class RecentTransactionsView(APIView):
+    """
+    Get most recent transactions (last 10).
+    Perfect for dashboard display.
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        try:
+            # Get limit from query params
+            limit = int(request.query_params.get('limit', 10))
+            limit = min(limit, 50)  # Max 50
+            
+            # ✅ CRITICAL: Check if Transaction model exists and has data
+            try:
+                # Get user's recent transactions
+                recent_txns = Transaction.objects.filter(
+                    user=request.user
+                ).order_by('-created_at')[:limit]
+                
+                # Convert to list to check count
+                txn_list = list(recent_txns)
+                
+                logger.info(f"Found {len(txn_list)} recent transactions for user {request.user.email}")
+                
+                # ✅ Return empty array if no transactions (NOT error!)
+                if len(txn_list) == 0:
+                    return Response({
+                        "success": True,
+                        "count": 0,
+                        "transactions": [],
+                        "message": "No transactions found yet"
+                    }, status=status.HTTP_200_OK)
+                
+                # Serialize the transactions
+                serializer = TransactionListSerializer(txn_list, many=True)
+                
+                return Response({
+                    "success": True,
+                    "count": len(txn_list),
+                    "transactions": serializer.data
+                }, status=status.HTTP_200_OK)
+                
+            except Exception as db_error:
+                # ✅ Specific database error handling
+                logger.error(f"Database error in recent transactions: {str(db_error)}", exc_info=True)
+                return Response({
+                    "success": False,
+                    "message": "Database error - Transaction table may not exist yet",
+                    "details": str(db_error),
+                    "hint": "Run migrations: python manage.py makemigrations && python manage.py migrate"
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        except ValueError as ve:
+            # Invalid limit parameter
+            logger.error(f"Invalid limit parameter: {str(ve)}")
+            return Response({
+                "success": False,
+                "message": "Invalid limit parameter - must be a number"
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+        except Exception as e:
+            # General error
+            logger.error(f"Recent transactions error: {str(e)}", exc_info=True)
+            return Response({
+                "success": False,
+                "message": "Failed to fetch recent transactions",
+                "details": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ============================================================================
+# TRANSACTION HISTORY VIEW
 # ============================================================================
 class TransactionHistoryView(APIView):
     """
     Get user's transaction history with comprehensive filtering.
-    
-    Query Parameters:
-    - provider: Filter by provider (MELD, ONRAMP, MOONPAY, FINCHPAY, CHANGELLY)
-    - type: Filter by type (BUY, SELL, SWAP)
-    - status: Filter by status (PENDING, COMPLETED, FAILED, etc.)
-    - source_currency: Filter by source currency (e.g., USD, BTC)
-    - destination_currency: Filter by destination currency (e.g., USDT, EUR)
-    - date_from: Filter from date (ISO format: 2024-01-01)
-    - date_to: Filter to date (ISO format: 2024-12-31)
-    - search: Search in transaction IDs, currencies
-    - page: Page number
-    - page_size: Results per page (max 100)
-    - ordering: Order by field (e.g., -created_at, status)
     """
-    permission_classes = [IsAuthenticated, IsTrader]
+    permission_classes = [IsAuthenticated]
     pagination_class = TransactionPagination
     
     def get(self, request):
         try:
-            # Base queryset - only user's transactions
-            queryset = Transaction.objects.filter(user=request.user)
-            
-            # ============== FILTERS ==============
-            
-            # Filter by provider
-            provider = request.query_params.get('provider')
-            if provider:
-                queryset = queryset.filter(provider=provider.upper())
-            
-            # Filter by transaction type
-            txn_type = request.query_params.get('type')
-            if txn_type:
-                queryset = queryset.filter(transaction_type=txn_type.upper())
-            
-            # Filter by status
-            txn_status = request.query_params.get('status')
-            if txn_status:
-                queryset = queryset.filter(status=txn_status.upper())
-            
-            # Filter by source currency
-            source_currency = request.query_params.get('source_currency')
-            if source_currency:
-                queryset = queryset.filter(source_currency__iexact=source_currency)
-            
-            # Filter by destination currency
-            destination_currency = request.query_params.get('destination_currency')
-            if destination_currency:
-                queryset = queryset.filter(destination_currency__iexact=destination_currency)
-            
-            # Filter by date range
-            date_from = request.query_params.get('date_from')
-            if date_from:
-                queryset = queryset.filter(created_at__gte=date_from)
-            
-            date_to = request.query_params.get('date_to')
-            if date_to:
-                queryset = queryset.filter(created_at__lte=date_to)
-            
-            # Search in transaction IDs and currencies
-            search = request.query_params.get('search')
-            if search:
-                queryset = queryset.filter(
-                    Q(transaction_id__icontains=search) |
-                    Q(provider_transaction_id__icontains=search) |
-                    Q(source_currency__icontains=search) |
-                    Q(destination_currency__icontains=search)
-                )
-            
-            # ============== ORDERING ==============
-            ordering = request.query_params.get('ordering', '-created_at')
-            queryset = queryset.order_by(ordering)
-            
-            # ============== PAGINATION ==============
-            paginator = self.pagination_class()
-            page = paginator.paginate_queryset(queryset, request)
-            
-            if page is not None:
-                serializer = TransactionListSerializer(page, many=True)
-                return paginator.get_paginated_response(serializer.data)
-            
-            # If no pagination
-            serializer = TransactionListSerializer(queryset, many=True)
-            return Response({
-                "success": True,
-                "count": queryset.count(),
-                "transactions": serializer.data
-            })
+            # ✅ Check if table exists first
+            try:
+                # Base queryset - only user's transactions
+                queryset = Transaction.objects.filter(user=request.user)
+                
+                # ============== FILTERS ==============
+                
+                # Filter by provider
+                provider = request.query_params.get('provider')
+                if provider:
+                    queryset = queryset.filter(provider=provider.upper())
+                
+                # Filter by transaction type
+                txn_type = request.query_params.get('type')
+                if txn_type:
+                    queryset = queryset.filter(transaction_type=txn_type.upper())
+                
+                # Filter by status
+                txn_status = request.query_params.get('status')
+                if txn_status:
+                    queryset = queryset.filter(status=txn_status.upper())
+                
+                # Filter by source currency
+                source_currency = request.query_params.get('source_currency')
+                if source_currency:
+                    queryset = queryset.filter(source_currency__iexact=source_currency)
+                
+                # Filter by destination currency
+                destination_currency = request.query_params.get('destination_currency')
+                if destination_currency:
+                    queryset = queryset.filter(destination_currency__iexact=destination_currency)
+                
+                # Filter by date range
+                date_from = request.query_params.get('date_from')
+                if date_from:
+                    queryset = queryset.filter(created_at__gte=date_from)
+                
+                date_to = request.query_params.get('date_to')
+                if date_to:
+                    queryset = queryset.filter(created_at__lte=date_to)
+                
+                # Search in transaction IDs and currencies
+                search = request.query_params.get('search')
+                if search:
+                    queryset = queryset.filter(
+                        Q(transaction_id__icontains=search) |
+                        Q(provider_transaction_id__icontains=search) |
+                        Q(source_currency__icontains=search) |
+                        Q(destination_currency__icontains=search)
+                    )
+                
+                # ============== ORDERING ==============
+                ordering = request.query_params.get('ordering', '-created_at')
+                queryset = queryset.order_by(ordering)
+                
+                # ✅ Check if empty
+                count = queryset.count()
+                logger.info(f"Found {count} transactions for user {request.user.email} with applied filters")
+                
+                if count == 0:
+                    return Response({
+                        "success": True,
+                        "count": 0,
+                        "results": [],
+                        "message": "No transactions found matching your filters"
+                    }, status=status.HTTP_200_OK)
+                
+                # ============== PAGINATION ==============
+                paginator = self.pagination_class()
+                page = paginator.paginate_queryset(queryset, request)
+                
+                if page is not None:
+                    serializer = TransactionListSerializer(page, many=True)
+                    return paginator.get_paginated_response(serializer.data)
+                
+                # If no pagination
+                serializer = TransactionListSerializer(queryset, many=True)
+                return Response({
+                    "success": True,
+                    "count": count,
+                    "transactions": serializer.data
+                }, status=status.HTTP_200_OK)
+                
+            except Exception as db_error:
+                logger.error(f"Database error: {str(db_error)}", exc_info=True)
+                return Response({
+                    "success": False,
+                    "message": "Database error - Transaction table may not exist",
+                    "details": str(db_error),
+                    "hint": "Run: python manage.py makemigrations && python manage.py migrate"
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         except Exception as e:
             logger.error(f"Transaction history error: {str(e)}", exc_info=True)
-            return Response(
-                {"success": False, "message": "Failed to fetch transaction history", "details": str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            return Response({
+                "success": False,
+                "message": "Failed to fetch transaction history",
+                "details": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ============================================================================
+# QUICK STATS VIEW
+# ============================================================================
+class QuickStatsView(APIView):
+    """
+    Get quick transaction statistics without heavy calculations.
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        try:
+            user = request.user
+            
+            # ✅ Check if table exists
+            try:
+                user_txns = Transaction.objects.filter(user=user)
+                
+                # Quick aggregations
+                total_transactions = user_txns.count()
+                
+                logger.info(f"User {user.email} has {total_transactions} total transactions")
+                
+                # If no transactions, return zeros (not error!)
+                if total_transactions == 0:
+                    return Response({
+                        "success": True,
+                        "stats": {
+                            'total_transactions': 0,
+                            'completed_transactions': 0,
+                            'failed_transactions': 0,
+                            'pending_transactions': 0,
+                            'total_buys': 0,
+                            'total_sells': 0,
+                            'total_swaps': 0,
+                            'total_fees_paid': "0.00000000",
+                            'recent_transactions_count': 0,
+                        },
+                        "message": "No transactions yet"
+                    }, status=status.HTTP_200_OK)
+                
+                completed_transactions = user_txns.filter(status='COMPLETED').count()
+                failed_transactions = user_txns.filter(status='FAILED').count()
+                pending_transactions = user_txns.filter(status__in=['PENDING', 'PROCESSING']).count()
+                
+                total_buys = user_txns.filter(transaction_type='BUY').count()
+                total_sells = user_txns.filter(transaction_type='SELL').count()
+                total_swaps = user_txns.filter(transaction_type='SWAP').count()
+                
+                # Total fees
+                fees_sum = user_txns.filter(status='COMPLETED').aggregate(
+                    total=Sum('total_fees')
+                )['total'] or Decimal('0.00000000')
+                
+                # Recent transactions (last 7 days)
+                seven_days_ago = timezone.now() - timedelta(days=7)
+                recent_count = user_txns.filter(created_at__gte=seven_days_ago).count()
+                
+                quick_stats = {
+                    'total_transactions': total_transactions,
+                    'completed_transactions': completed_transactions,
+                    'failed_transactions': failed_transactions,
+                    'pending_transactions': pending_transactions,
+                    'total_buys': total_buys,
+                    'total_sells': total_sells,
+                    'total_swaps': total_swaps,
+                    'total_fees_paid': str(fees_sum),
+                    'recent_transactions_count': recent_count,
+                }
+                
+                return Response({
+                    "success": True,
+                    "stats": quick_stats
+                }, status=status.HTTP_200_OK)
+                
+            except Exception as db_error:
+                logger.error(f"Database error: {str(db_error)}", exc_info=True)
+                return Response({
+                    "success": False,
+                    "message": "Database error - Transaction table may not exist",
+                    "details": str(db_error),
+                    "hint": "Run: python manage.py makemigrations && python manage.py migrate"
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        except Exception as e:
+            logger.error(f"Quick stats error: {str(e)}", exc_info=True)
+            return Response({
+                "success": False,
+                "message": "Failed to fetch quick stats",
+                "details": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # ============================================================================
@@ -139,197 +313,36 @@ class TransactionDetailView(APIView):
     """
     Get detailed information about a specific transaction.
     """
-    permission_classes = [IsAuthenticated, IsTrader]
+    permission_classes = [IsAuthenticated]
     
     def get(self, request, transaction_id):
         try:
-            transaction = Transaction.objects.get(
-                transaction_id=transaction_id,
-                user=request.user
-            )
+            try:
+                transaction = Transaction.objects.get(
+                    transaction_id=transaction_id,
+                    user=request.user
+                )
+                
+                serializer = TransactionSerializer(transaction)
+                
+                return Response({
+                    "success": True,
+                    "transaction": serializer.data
+                }, status=status.HTTP_200_OK)
             
-            serializer = TransactionSerializer(transaction)
-            
-            return Response({
-                "success": True,
-                "transaction": serializer.data
-            })
-        
-        except Transaction.DoesNotExist:
-            return Response(
-                {"success": False, "message": "Transaction not found"},
-                status=status.HTTP_404_NOT_FOUND
-            )
+            except Transaction.DoesNotExist:
+                return Response({
+                    "success": False,
+                    "message": f"Transaction {transaction_id} not found or doesn't belong to you"
+                }, status=status.HTTP_404_NOT_FOUND)
+                
         except Exception as e:
             logger.error(f"Transaction detail error: {str(e)}", exc_info=True)
-            return Response(
-                {"success": False, "message": "Internal server error", "details": str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-
-# ============================================================================
-# TRANSACTION STATISTICS VIEW
-# ============================================================================
-class TransactionStatisticsView(APIView):
-    """
-    Get comprehensive transaction statistics for the user.
-    Includes:
-    - Total transactions (all, completed, failed, pending)
-    - Breakdown by type (buy, sell, swap)
-    - Breakdown by provider
-    - Total fees paid
-    - Recent activity
-    """
-    permission_classes = [IsAuthenticated, IsTrader]
-    
-    def get(self, request):
-        try:
-            user = request.user
-            
-            # Get or create stats object
-            stats, created = TransactionStats.objects.get_or_create(user=user)
-            
-            # Update stats
-            stats.update_stats()
-            
-            # Get additional breakdowns
-            user_txns = Transaction.objects.filter(user=user)
-            
-            # Provider breakdown
-            provider_breakdown = user_txns.values('provider').annotate(
-                count=Count('id'),
-                completed=Count('id', filter=Q(status='COMPLETED'))
-            ).order_by('-count')
-            
-            # Monthly breakdown (last 6 months)
-            six_months_ago = timezone.now() - timedelta(days=180)
-            monthly_data = user_txns.filter(
-                created_at__gte=six_months_ago
-            ).extra(
-                select={'month': "DATE_TRUNC('month', created_at)"}
-            ).values('month').annotate(
-                count=Count('id'),
-                completed=Count('id', filter=Q(status='COMPLETED'))
-            ).order_by('month')
-            
-            # Recent transactions (last 7 days)
-            seven_days_ago = timezone.now() - timedelta(days=7)
-            recent_count = user_txns.filter(created_at__gte=seven_days_ago).count()
-            
-            # Response data
-            stats_data = TransactionStatsSerializer(stats).data
-            stats_data['provider_breakdown'] = list(provider_breakdown)
-            stats_data['monthly_data'] = list(monthly_data)
-            stats_data['recent_transactions_count'] = recent_count
-            
             return Response({
-                "success": True,
-                "statistics": stats_data
-            })
-        
-        except Exception as e:
-            logger.error(f"Statistics error: {str(e)}", exc_info=True)
-            return Response(
-                {"success": False, "message": "Failed to fetch statistics", "details": str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-
-# ============================================================================
-# QUICK STATS VIEW (Lightweight)
-# ============================================================================
-class QuickStatsView(APIView):
-    """
-    Get quick transaction statistics without heavy calculations.
-    Use this for dashboard widgets.
-    """
-    permission_classes = [IsAuthenticated, IsTrader]
-    
-    def get(self, request):
-        try:
-            user = request.user
-            user_txns = Transaction.objects.filter(user=user)
-            
-            # Quick aggregations
-            total_transactions = user_txns.count()
-            completed_transactions = user_txns.filter(status='COMPLETED').count()
-            failed_transactions = user_txns.filter(status='FAILED').count()
-            pending_transactions = user_txns.filter(status__in=['PENDING', 'PROCESSING']).count()
-            
-            total_buys = user_txns.filter(transaction_type='BUY').count()
-            total_sells = user_txns.filter(transaction_type='SELL').count()
-            total_swaps = user_txns.filter(transaction_type='SWAP').count()
-            
-            # Total fees
-            fees_sum = user_txns.filter(status='COMPLETED').aggregate(
-                total=Sum('total_fees')
-            )['total'] or Decimal('0.00000000')
-            
-            # Recent transactions (last 7 days)
-            seven_days_ago = timezone.now() - timedelta(days=7)
-            recent_count = user_txns.filter(created_at__gte=seven_days_ago).count()
-            
-            quick_stats = {
-                'total_transactions': total_transactions,
-                'completed_transactions': completed_transactions,
-                'failed_transactions': failed_transactions,
-                'pending_transactions': pending_transactions,
-                'total_buys': total_buys,
-                'total_sells': total_sells,
-                'total_swaps': total_swaps,
-                'total_fees_paid': str(fees_sum),
-                'recent_transactions_count': recent_count,
-            }
-            
-            serializer = QuickStatsSerializer(quick_stats)
-            
-            return Response({
-                "success": True,
-                "stats": serializer.data
-            })
-        
-        except Exception as e:
-            logger.error(f"Quick stats error: {str(e)}", exc_info=True)
-            return Response(
-                {"success": False, "message": "Failed to fetch quick stats", "details": str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-
-# ============================================================================
-# RECENT TRANSACTIONS VIEW (for Dashboard)
-# ============================================================================
-class RecentTransactionsView(APIView):
-    """
-    Get most recent transactions (last 10).
-    Perfect for dashboard display.
-    """
-    permission_classes = [IsAuthenticated, IsTrader]
-    
-    def get(self, request):
-        try:
-            limit = int(request.query_params.get('limit', 10))
-            limit = min(limit, 50)  # Max 50
-            
-            recent_txns = Transaction.objects.filter(
-                user=request.user
-            ).order_by('-created_at')[:limit]
-            
-            serializer = TransactionListSerializer(recent_txns, many=True)
-            
-            return Response({
-                "success": True,
-                "count": recent_txns.count(),
-                "transactions": serializer.data
-            })
-        
-        except Exception as e:
-            logger.error(f"Recent transactions error: {str(e)}", exc_info=True)
-            return Response(
-                {"success": False, "message": "Failed to fetch recent transactions", "details": str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+                "success": False,
+                "message": "Internal server error",
+                "details": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # ============================================================================
@@ -338,9 +351,8 @@ class RecentTransactionsView(APIView):
 class ExportTransactionsView(APIView):
     """
     Export transactions as CSV or JSON.
-    Query param: format=csv or format=json (default: json)
     """
-    permission_classes = [IsAuthenticated, IsTrader]
+    permission_classes = [IsAuthenticated]
     
     def get(self, request):
         try:
@@ -348,6 +360,12 @@ class ExportTransactionsView(APIView):
             
             # Get user transactions
             transactions = Transaction.objects.filter(user=request.user).order_by('-created_at')
+            
+            if transactions.count() == 0:
+                return Response({
+                    "success": False,
+                    "message": "No transactions to export"
+                }, status=status.HTTP_404_NOT_FOUND)
             
             if export_format == 'csv':
                 import csv
@@ -388,11 +406,12 @@ class ExportTransactionsView(APIView):
                     "count": transactions.count(),
                     "transactions": serializer.data,
                     "exported_at": timezone.now().isoformat()
-                })
-        
+                }, status=status.HTTP_200_OK)
+                
         except Exception as e:
             logger.error(f"Export error: {str(e)}", exc_info=True)
-            return Response(
-                {"success": False, "message": "Export failed", "details": str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            return Response({
+                "success": False,
+                "message": "Export failed",
+                "details": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -11,7 +11,11 @@ from rest_framework.permissions import IsAuthenticated
 from django.conf import settings
 from django.http import JsonResponse
 from django.core.cache import cache
+from django.utils import timezone
+
+# ✅ ADD THESE IMPORTS
 from users.transaction_helpers import create_transaction_record, should_save_transaction
+from users.models import Transaction
 
 from onramp.views import generate_onramp_headers, ONRAMP_API_BASE_URL
 
@@ -135,6 +139,10 @@ def get_crypto_quote(request):
 
     return response
 
+
+# ============================================================================
+# UPDATED: create_session_widget - Now saves to database for auth users
+# ============================================================================
 @api_view(['POST'])
 @permission_classes([])
 def create_session_widget(request):
@@ -156,14 +164,14 @@ def create_session_widget(request):
             
             if response_data.get('success'):
                 widget_url = response_data.get('data', {}).get('widgetUrl') or response_data.get('widgetUrl')
-
+                
                 # CREATE DATABASE RECORD (if authenticated)
                 db_transaction = None
                 if should_save_transaction(request):
                     db_transaction = create_transaction_record(
                         user=request.user,
                         provider='MELD',
-                        transaction_type=data.get('sessionType', 'BUY').upper(),
+                        transaction_type=session_type.upper(),
                         source_currency=session_data.get('sourceCurrencyCode'),
                         source_amount=session_data.get('sourceAmount'),
                         destination_currency=session_data.get('destinationCurrencyCode'),
@@ -175,13 +183,14 @@ def create_session_widget(request):
                         }
                     )
                 
-                # Create unique transaction ID using timestamp + customer
+                # CREATE CACHE RECORD (for webhooks)
                 timestamp = int(time.time() * 1000)
                 unique_string = f"{customer_id}_{timestamp}_{session_type}"
                 transaction_key = f"txn_meld_{hashlib.md5(unique_string.encode()).hexdigest()[:12]}"
                 
                 transaction_record = {
                     'transaction_id': transaction_key,
+                    'db_id': db_transaction.id if db_transaction else None,  # Link to DB
                     'customer_id': customer_id,
                     'provider': session_data.get('serviceProvider'),
                     'session_type': session_type,
@@ -204,7 +213,8 @@ def create_session_widget(request):
                 customer_txns.append(transaction_key)
                 cache.set(f"customer_{customer_id}_all", customer_txns, timeout=86400)
                 
-                response_data['transactionId'] = transaction_key
+                # Return transaction ID in response
+                response_data['transactionId'] = db_transaction.transaction_id if db_transaction else transaction_key
                 
                 return Response(response_data, status=response.status_code)
         
@@ -217,6 +227,10 @@ def create_session_widget(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
+
+# ============================================================================
+# UPDATED: meld_webhook - Now updates database for auth users
+# ============================================================================
 @api_view(['POST'])
 @permission_classes([])
 def meld_webhook(request):
@@ -228,7 +242,7 @@ def meld_webhook(request):
         logger.info(f"Meld webhook received: {json.dumps(data, indent=2)}")
         
         customer_id = data.get('externalCustomerId') or data.get('customerId')
-        status = data.get('status', '').upper()
+        status_value = data.get('status', '').upper()
         
         # Try to get cryptoCurrency and fiatCurrency from webhook to match transaction
         crypto_currency = data.get('cryptoCurrencyCode') or data.get('destinationCurrencyCode')
@@ -245,7 +259,7 @@ def meld_webhook(request):
             'PROCESSING': 'PENDING'
         }
         
-        mapped_status = status_mapping.get(status, 'PENDING')
+        mapped_status = status_mapping.get(status_value, 'PENDING')
         
         if customer_id:
             # Get all transactions for this customer
@@ -263,9 +277,30 @@ def meld_webhook(request):
                     transaction_record['status'] = mapped_status
                     transaction_record['updated_at'] = int(time.time() * 1000)
                     transaction_record['webhook_data'] = data
-                    transaction_record['provider_status'] = status
+                    transaction_record['provider_status'] = status_value
                     
                     cache.set(txn_key, transaction_record, timeout=86400)
+                    
+                    db_id = transaction_record.get('db_id')
+                    if db_id:
+                        try:
+                            txn = Transaction.objects.get(id=db_id)
+                            txn.status = mapped_status
+                            
+                            # Update provider_data with webhook info
+                            if not txn.provider_data:
+                                txn.provider_data = {}
+                            txn.provider_data['webhook_data'] = data
+                            
+                            if mapped_status == 'COMPLETED':
+                                txn.completed_at = timezone.now()
+                            
+                            txn.save()
+                            
+                            logger.info(f"✅ Updated DB transaction {db_id} to {mapped_status}")
+                            
+                        except Transaction.DoesNotExist:
+                            logger.error(f"❌ DB transaction {db_id} not found")
                     
                     logger.info(f"✅ Updated transaction {txn_key} to status {mapped_status}")
                     updated = True
