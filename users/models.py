@@ -3,6 +3,9 @@ from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, Permis
 import random
 import uuid
 from django.contrib.auth.hashers import make_password, check_password
+from django.contrib.auth.models import User
+from decimal import Decimal
+
 
 class UserManager(BaseUserManager):
     def create_user(self, email, password=None,**extra_fields):
@@ -178,19 +181,383 @@ class Notification(models.Model):
 
 
 class Transaction(models.Model):
-    PLATFORM_CHOICES = (
-        ('onramp', 'Onramp'),
-        ('meld', 'Meld'),
+    """
+    Comprehensive transaction model for tracking all crypto buy/sell/swap operations.
+    Supports multiple providers: Meld, OnRamp, MoonPay, FinchPay, Changelly
+    """
+    
+    # Provider Choices
+    PROVIDER_CHOICES = [
+        ('MELD', 'Meld'),
+        ('ONRAMP', 'OnRamp'),
+        ('MOONPAY', 'MoonPay'),
+        ('FINCHPAY', 'FinchPay'),
+        ('CHANGELLY', 'Changelly'),
+    ]
+    
+    # Transaction Type Choices
+    TYPE_CHOICES = [
+        ('BUY', 'Buy Crypto'),
+        ('SELL', 'Sell Crypto'),
+        ('SWAP', 'Swap Crypto'),
+    ]
+    
+    # Status Choices
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('PROCESSING', 'Processing'),
+        ('COMPLETED', 'Completed'),
+        ('FAILED', 'Failed'),
+        ('CANCELLED', 'Cancelled'),
+        ('EXPIRED', 'Expired'),
+    ]
+    
+    # ============================================================================
+    # CORE FIELDS
+    # ============================================================================
+    user = models.ForeignKey(
+        Users, 
+        on_delete=models.CASCADE, 
+        related_name='crypto_transactions',
+        help_text="User who initiated the transaction"
     )
+    
+    provider = models.CharField(
+        max_length=20, 
+        choices=PROVIDER_CHOICES,
+        help_text="Payment/Exchange provider used"
+    )
+    
+    transaction_type = models.CharField(
+        max_length=10, 
+        choices=TYPE_CHOICES,
+        help_text="Type of transaction: BUY, SELL, or SWAP"
+    )
+    
+    status = models.CharField(
+        max_length=20, 
+        choices=STATUS_CHOICES, 
+        default='PENDING',
+        db_index=True,
+        help_text="Current status of the transaction"
+    )
+    
+    # ============================================================================
+    # TRANSACTION IDENTIFIERS
+    # ============================================================================
+    transaction_id = models.CharField(
+        max_length=255, 
+        unique=True,
+        db_index=True,
+        help_text="Our internal transaction ID"
+    )
+    
+    provider_transaction_id = models.CharField(
+        max_length=255, 
+        blank=True, 
+        null=True,
+        db_index=True,
+        help_text="Provider's transaction ID (e.g., urlHash, externalId)"
+    )
+    
+    provider_reference_id = models.CharField(
+        max_length=255, 
+        blank=True, 
+        null=True,
+        help_text="Provider's reference ID (e.g., OnRamp referenceId)"
+    )
+    
+    # ============================================================================
+    # CURRENCY & AMOUNTS
+    # ============================================================================
+    source_currency = models.CharField(
+        max_length=20,
+        help_text="Source currency code (e.g., USD, BTC)"
+    )
+    
+    source_amount = models.DecimalField(
+        max_digits=20, 
+        decimal_places=8,
+        help_text="Amount of source currency"
+    )
+    
+    destination_currency = models.CharField(
+        max_length=20,
+        help_text="Destination currency code (e.g., USDT, EUR)"
+    )
+    
+    destination_amount = models.DecimalField(
+        max_digits=20, 
+        decimal_places=8, 
+        null=True, 
+        blank=True,
+        help_text="Amount of destination currency received/expected"
+    )
+    
+    # ============================================================================
+    # PRICING & FEES
+    # ============================================================================
+    exchange_rate = models.DecimalField(
+        max_digits=20, 
+        decimal_places=8, 
+        null=True, 
+        blank=True,
+        help_text="Exchange rate at time of transaction"
+    )
+    
+    total_fees = models.DecimalField(
+        max_digits=20, 
+        decimal_places=8, 
+        default=Decimal('0.00000000'),
+        help_text="Total fees charged (all fees combined)"
+    )
+    
+    network_fee = models.DecimalField(
+        max_digits=20, 
+        decimal_places=8, 
+        default=Decimal('0.00000000'),
+        help_text="Blockchain network/gas fee"
+    )
+    
+    service_fee = models.DecimalField(
+        max_digits=20, 
+        decimal_places=8, 
+        default=Decimal('0.00000000'),
+        help_text="Provider service fee"
+    )
+    
+    # ============================================================================
+    # PROFIT TRACKING (for future features)
+    # ============================================================================
+    profit_loss = models.DecimalField(
+        max_digits=20, 
+        decimal_places=8, 
+        null=True, 
+        blank=True,
+        help_text="Calculated profit/loss (for future portfolio tracking)"
+    )
+    
+    profit_percentage = models.DecimalField(
+        max_digits=10, 
+        decimal_places=4, 
+        null=True, 
+        blank=True,
+        help_text="Profit/loss percentage (for future portfolio tracking)"
+    )
+    
+    # ============================================================================
+    # BLOCKCHAIN & NETWORK DETAILS
+    # ============================================================================
+    network = models.CharField(
+        max_length=50, 
+        blank=True, 
+        null=True,
+        help_text="Blockchain network (e.g., TRC20, ERC20, BEP20)"
+    )
+    
+    wallet_address = models.CharField(
+        max_length=255, 
+        blank=True, 
+        null=True,
+        help_text="Destination wallet address"
+    )
+    
+    transaction_hash = models.CharField(
+        max_length=255, 
+        blank=True, 
+        null=True,
+        help_text="Blockchain transaction hash (if available)"
+    )
+    
+    # ============================================================================
+    # PAYMENT METHOD
+    # ============================================================================
+    payment_method = models.CharField(
+        max_length=100, 
+        blank=True, 
+        null=True,
+        help_text="Payment method used (e.g., card, bank_transfer, SEPA)"
+    )
+    
+    # ============================================================================
+    # ADDITIONAL METADATA
+    # ============================================================================
+    provider_data = models.JSONField(
+        default=dict, 
+        blank=True,
+        help_text="Raw data from provider (webhooks, API responses)"
+    )
+    
+    widget_url = models.URLField(
+        max_length=500, 
+        blank=True, 
+        null=True,
+        help_text="URL of the payment/swap widget (if applicable)"
+    )
+    
+    failure_reason = models.TextField(
+        blank=True, 
+        null=True,
+        help_text="Reason for failure (if status is FAILED)"
+    )
+    
+    # ============================================================================
+    # TIMESTAMPS
+    # ============================================================================
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True,
+        help_text="When transaction was created"
+    )
+    
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        help_text="Last update time"
+    )
+    
+    completed_at = models.DateTimeField(
+        null=True, 
+        blank=True,
+        help_text="When transaction was completed"
+    )
+    
+    # ============================================================================
+    # META & METHODS
+    # ============================================================================
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', '-created_at']),
+            models.Index(fields=['provider', 'status']),
+            models.Index(fields=['transaction_id']),
+            models.Index(fields=['provider_transaction_id']),
+            models.Index(fields=['status', '-created_at']),
+        ]
+        verbose_name = 'Transaction'
+        verbose_name_plural = 'Transactions'
+    
+    def __str__(self):
+        return f"{self.transaction_type} - {self.source_currency} to {self.destination_currency} ({self.status})"
+    
+    def get_display_status(self):
+        """Get user-friendly status message"""
+        status_messages = {
+            'PENDING': 'Transaction is being processed',
+            'PROCESSING': 'Transaction in progress',
+            'COMPLETED': 'Transaction completed successfully',
+            'FAILED': 'Transaction failed',
+            'CANCELLED': 'Transaction was cancelled',
+            'EXPIRED': 'Transaction expired',
+        }
+        return status_messages.get(self.status, 'Unknown status')
+    
+    def is_profitable(self):
+        """Check if transaction resulted in profit (for future use)"""
+        if self.profit_loss:
+            return self.profit_loss > 0
+        return None
+    
+    @property
+    def total_cost(self):
+        """Calculate total cost including fees"""
+        return self.source_amount + self.total_fees
+    
+    @property
+    def net_amount(self):
+        """Calculate net amount after fees"""
+        if self.destination_amount:
+            return self.destination_amount - self.total_fees
+        return None
 
-    user = models.ForeignKey(Users, on_delete=models.CASCADE)
-    platform = models.CharField(max_length=20, choices=PLATFORM_CHOICES)
-    transaction_id = models.CharField(max_length=128, unique=True)
-    crypto_code = models.CharField(max_length=10)
-    fiat_code = models.CharField(max_length=10)
-    type = models.CharField(max_length=10)  # 'buy' or 'sell'
-    crypto_amount = models.DecimalField(max_digits=20, decimal_places=8)
-    fiat_amount = models.DecimalField(max_digits=20, decimal_places=2)
-    status = models.CharField(max_length=20)
-    created_at = models.DateTimeField()
+
+# ============================================================================
+# TRANSACTION STATISTICS MODEL (for caching stats)
+# ============================================================================
+class TransactionStats(models.Model):
+    """
+    Cached transaction statistics per user.
+    Updated periodically or on transaction completion.
+    """
+    user = models.OneToOneField(
+        Users, 
+        on_delete=models.CASCADE, 
+        related_name='transaction_stats'
+    )
+    
+    # Total counts
+    total_transactions = models.IntegerField(default=0)
+    completed_transactions = models.IntegerField(default=0)
+    failed_transactions = models.IntegerField(default=0)
+    pending_transactions = models.IntegerField(default=0)
+    
+    # Transaction types
+    total_buys = models.IntegerField(default=0)
+    total_sells = models.IntegerField(default=0)
+    total_swaps = models.IntegerField(default=0)
+    
+    # Volume (in USD equivalent for now)
+    total_volume_usd = models.DecimalField(
+        max_digits=20, 
+        decimal_places=2, 
+        default=Decimal('0.00')
+    )
+    
+    total_fees_paid = models.DecimalField(
+        max_digits=20, 
+        decimal_places=8, 
+        default=Decimal('0.00000000')
+    )
+    
+    # Profit tracking (for future)
+    total_profit_loss = models.DecimalField(
+        max_digits=20, 
+        decimal_places=8, 
+        default=Decimal('0.00000000')
+    )
+    
+    # Timestamps
+    last_transaction_date = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = 'Transaction Statistics'
+        verbose_name_plural = 'Transaction Statistics'
+    
+    def __str__(self):
+        return f"Stats for {self.user.email}"
+    
+    def update_stats(self):
+        """
+        Recalculate statistics from actual transactions.
+        Call this after each transaction completion or periodically.
+        """
+        from django.db.models import Count, Sum, Q
+        from decimal import Decimal
+        
+        user_txns = Transaction.objects.filter(user=self.user)
+        
+        # Count totals
+        self.total_transactions = user_txns.count()
+        self.completed_transactions = user_txns.filter(status='COMPLETED').count()
+        self.failed_transactions = user_txns.filter(status='FAILED').count()
+        self.pending_transactions = user_txns.filter(
+            status__in=['PENDING', 'PROCESSING']
+        ).count()
+        
+        # Count by type
+        self.total_buys = user_txns.filter(transaction_type='BUY').count()
+        self.total_sells = user_txns.filter(transaction_type='SELL').count()
+        self.total_swaps = user_txns.filter(transaction_type='SWAP').count()
+        
+        # Calculate total fees (only completed transactions)
+        fees_sum = user_txns.filter(status='COMPLETED').aggregate(
+            total=Sum('total_fees')
+        )['total']
+        self.total_fees_paid = fees_sum or Decimal('0.00000000')
+        
+        # Get last transaction date
+        last_txn = user_txns.order_by('-created_at').first()
+        if last_txn:
+            self.last_transaction_date = last_txn.created_at
+        
+        self.save()

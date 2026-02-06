@@ -2,9 +2,10 @@ from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 
-from .models import Users, Notification, EmailOTP, Transaction
+from .models import Users, Notification, EmailOTP, Transaction, TransactionStats
 from datetime import timedelta
 from django.utils import timezone
+from decimal import Decimal
 
 class SignUpSerializer(serializers.ModelSerializer):
     first_name = serializers.CharField(required=False,allow_blank=True)
@@ -219,7 +220,203 @@ class RequestPasswordResetOTPSerializer(serializers.Serializer):
     #     email = self.validated_data['email']
     #     user = Users.objects.get(email=email)
 
+
 class TransactionSerializer(serializers.ModelSerializer):
+    """
+    Comprehensive transaction serializer with all fields.
+    """
+    # Custom display fields
+    display_status = serializers.SerializerMethodField()
+    total_cost = serializers.SerializerMethodField()
+    net_amount = serializers.SerializerMethodField()
+    user_email = serializers.EmailField(source='user.email', read_only=True)
+    provider_display = serializers.CharField(source='get_provider_display', read_only=True)
+    type_display = serializers.CharField(source='get_transaction_type_display', read_only=True)
+    
     class Meta:
         model = Transaction
-        fields = '__all__'
+        fields = [
+            # IDs
+            'id',
+            'transaction_id',
+            'provider_transaction_id',
+            'provider_reference_id',
+            
+            # User
+            'user',
+            'user_email',
+            
+            # Core fields
+            'provider',
+            'provider_display',
+            'transaction_type',
+            'type_display',
+            'status',
+            'display_status',
+            
+            # Currencies & Amounts
+            'source_currency',
+            'source_amount',
+            'destination_currency',
+            'destination_amount',
+            
+            # Pricing
+            'exchange_rate',
+            'total_fees',
+            'network_fee',
+            'service_fee',
+            'total_cost',
+            'net_amount',
+            
+            # Blockchain
+            'network',
+            'wallet_address',
+            'transaction_hash',
+            
+            # Payment
+            'payment_method',
+            
+            # Metadata
+            'widget_url',
+            'failure_reason',
+            'provider_data',
+            
+            # Timestamps
+            'created_at',
+            'updated_at',
+            'completed_at',
+        ]
+        read_only_fields = [
+            'id', 
+            'created_at', 
+            'updated_at',
+            'user_email',
+            'provider_display',
+            'type_display',
+            'display_status',
+            'total_cost',
+            'net_amount',
+        ]
+    
+    def get_display_status(self, obj):
+        return obj.get_display_status()
+    
+    def get_total_cost(self, obj):
+        return str(obj.total_cost)
+    
+    def get_net_amount(self, obj):
+        net = obj.net_amount
+        return str(net) if net is not None else None
+
+
+class TransactionListSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for transaction lists (without heavy JSON fields).
+    """
+    display_status = serializers.SerializerMethodField()
+    provider_display = serializers.CharField(source='get_provider_display', read_only=True)
+    type_display = serializers.CharField(source='get_transaction_type_display', read_only=True)
+    
+    class Meta:
+        model = Transaction
+        fields = [
+            'id',
+            'transaction_id',
+            'provider',
+            'provider_display',
+            'transaction_type',
+            'type_display',
+            'status',
+            'display_status',
+            'source_currency',
+            'source_amount',
+            'destination_currency',
+            'destination_amount',
+            'exchange_rate',
+            'total_fees',
+            'network',
+            'payment_method',
+            'created_at',
+            'completed_at',
+        ]
+    
+    def get_display_status(self, obj):
+        return obj.get_display_status()
+
+
+class TransactionStatsSerializer(serializers.ModelSerializer):
+    """
+    Serializer for transaction statistics.
+    """
+    user_email = serializers.EmailField(source='user.email', read_only=True)
+    
+    class Meta:
+        model = TransactionStats
+        fields = [
+            'user',
+            'user_email',
+            'total_transactions',
+            'completed_transactions',
+            'failed_transactions',
+            'pending_transactions',
+            'total_buys',
+            'total_sells',
+            'total_swaps',
+            'total_volume_usd',
+            'total_fees_paid',
+            'total_profit_loss',
+            'last_transaction_date',
+            'updated_at',
+        ]
+        read_only_fields = fields
+
+
+class TransactionCreateSerializer(serializers.ModelSerializer):
+    """
+    Serializer for creating transactions (used internally by provider views).
+    """
+    class Meta:
+        model = Transaction
+        fields = [
+            'user',
+            'provider',
+            'transaction_type',
+            'transaction_id',
+            'provider_transaction_id',
+            'provider_reference_id',
+            'source_currency',
+            'source_amount',
+            'destination_currency',
+            'destination_amount',
+            'exchange_rate',
+            'total_fees',
+            'network_fee',
+            'service_fee',
+            'network',
+            'wallet_address',
+            'payment_method',
+            'widget_url',
+            'provider_data',
+        ]
+    
+    def create(self, validated_data):
+        """
+        Create transaction with default PENDING status.
+        """
+        validated_data['status'] = 'PENDING'
+        return super().create(validated_data)
+
+
+class QuickStatsSerializer(serializers.Serializer):
+    """
+    Serializer for quick statistics response (calculated on-the-fly).
+    """
+    total_transactions = serializers.IntegerField()
+    completed_transactions = serializers.IntegerField()
+    failed_transactions = serializers.IntegerField()
+    pending_transactions = serializers.IntegerField()
+    total_buys = serializers.IntegerField()
+    total_sells = serializers.IntegerField()
+    total_swaps = serializers.IntegerField()
+    total_fees_paid = serializers.DecimalField(max_digits=20, decimal_places=8)
+    recent_transactions_count = serializers.IntegerField()

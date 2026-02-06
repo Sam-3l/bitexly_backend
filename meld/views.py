@@ -11,6 +11,7 @@ from rest_framework.permissions import IsAuthenticated
 from django.conf import settings
 from django.http import JsonResponse
 from django.core.cache import cache
+from users.transaction_helpers import create_transaction_record, should_save_transaction
 
 from onramp.views import generate_onramp_headers, ONRAMP_API_BASE_URL
 
@@ -155,6 +156,24 @@ def create_session_widget(request):
             
             if response_data.get('success'):
                 widget_url = response_data.get('data', {}).get('widgetUrl') or response_data.get('widgetUrl')
+
+                # CREATE DATABASE RECORD (if authenticated)
+                db_transaction = None
+                if should_save_transaction(request):
+                    db_transaction = create_transaction_record(
+                        user=request.user,
+                        provider='MELD',
+                        transaction_type=data.get('sessionType', 'BUY').upper(),
+                        source_currency=session_data.get('sourceCurrencyCode'),
+                        source_amount=session_data.get('sourceAmount'),
+                        destination_currency=session_data.get('destinationCurrencyCode'),
+                        widget_url=widget_url,
+                        payment_method=session_data.get('paymentMethod'),
+                        provider_data={
+                            'customer_id': customer_id,
+                            'service_provider': session_data.get('serviceProvider'),
+                        }
+                    )
                 
                 # Create unique transaction ID using timestamp + customer
                 timestamp = int(time.time() * 1000)

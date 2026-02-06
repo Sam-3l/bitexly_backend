@@ -1,5 +1,13 @@
 from django.urls import path
 from .views import *
+from .transaction_views import (
+    TransactionHistoryView,
+    TransactionDetailView,
+    TransactionStatisticsView,
+    QuickStatsView,
+    RecentTransactionsView,
+    ExportTransactionsView,
+)
 
 urlpatterns = [
     path('signup/', SignupView.as_view(), name='partner-signup'),
@@ -15,12 +23,36 @@ urlpatterns = [
     # path('notifications/partner/', NotificationListView.as_view(), name="get-notified"),
     # path('notification/read/', NotificationMarkAsReadView.as_view(), name="mark-read-notification"),
     path('getDetails/', DetailsView.as_view(), name="partner-details"),
+    # ============================================================================
+    # TRANSACTION HISTORY & STATISTICS
+    # ============================================================================
+    # Main transaction history with filters
+    path('transactions/history/', TransactionHistoryView.as_view(), name='transaction-history'),
+    
+    # Get specific transaction details
+    path('transactions/<str:transaction_id>/', TransactionDetailView.as_view(), name='transaction-detail'),
+    
+    # Full statistics with breakdowns
+    path('transactions/stats/full/', TransactionStatisticsView.as_view(), name='transaction-statistics'),
+    
+    # Quick stats for dashboard
+    path('transactions/stats/quick/', QuickStatsView.as_view(), name='quick-stats'),
+    
+    # Recent transactions (for dashboard)
+    path('transactions/recent/', RecentTransactionsView.as_view(), name='recent-transactions'),
+    
+    # Export transactions (CSV/JSON)
+    path('transactions/export/', ExportTransactionsView.as_view(), name='export-transactions'),
+    
+    # ============================================================================
+    # OLD TRANSACTION ENDPOINTS (Keep for backward compatibility)
+    # ============================================================================
+    path("transactions/", UserTransactionHistory.as_view(), name="user-transaction"),  # Old endpoint
     path("quote/", CreateQuoteView.as_view(), name="meld-create-quote"),
     path("payment/", CreatePaymentView.as_view(), name="meld-create-payment"),
     path("meldwebhook/", MeldWebhookView.as_view(), name="meld-webhook"),
     path("moonpay/signature/", MeldWebhookView.as_view(), name="meld-webhook"),
     path("onrampwebhook/", OnrampWebhookView.as_view(), name="onramp-webhook"),
-    path("transactions/", UserTransactionHistory.as_view(), name="user-transaction"),
     # path("get-onramp-url/", OnrampURLView.as_view(), name="get_onramp_url"),
     path("get-offramp-url/", OfframpURLView.as_view(), name="get_offramp_url"),
     # path("changelly/pairs/", GetPairsParamsView.as_view(), name=""),

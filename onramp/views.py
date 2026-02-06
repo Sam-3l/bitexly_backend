@@ -15,6 +15,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny
+from users.transaction_helpers import create_transaction_record, should_save_transaction, update_transaction_status, find_transaction
+from django.utils import timezone
+from users.models import Transaction
 
 # Setup logger
 logger = logging.getLogger(__name__)
@@ -651,39 +654,56 @@ def generate_onramp_url(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        transaction_data = result.get("data", {})
-        url_hash = transaction_data.get("urlHash")
-
-        # Store transaction for tracking
-        transaction_key = f"txn_onramp_{url_hash}" if url_hash else f"txn_onramp_{int(time.time())}_{flow_type}"
-        transaction_record = {
-            'transaction_id': transaction_key,
-            'provider': 'ONRAMP',
-            'status': 'PENDING',
-            'url_hash': url_hash,
-            'widget_url': transaction_data.get('link'),
-            'created_at': int(time.time() * 1000),
-            'flow_type': 'BUY' if flow_type == 1 else 'SELL',
-            'source_currency': source_currency,
-            'destination_currency': destination_currency,
-            'amount': source_amount,
-            'network': network,
-        }
-
-        from django.core.cache import cache
-        cache.set(transaction_key, transaction_record, timeout=86400)
-
-        return Response(
-            {
+        if result.get("status") == 1:
+            transaction_data = result.get("data", {})
+            url_hash = transaction_data.get("urlHash")
+            
+            # ✅ CHECK IF USER IS AUTHENTICATED
+            db_transaction = None
+            if should_save_transaction(request):
+                # ✅ CREATE DATABASE RECORD
+                db_transaction = create_transaction_record(
+                    user=request.user,
+                    provider='ONRAMP',
+                    transaction_type='BUY' if flow_type == 1 else 'SELL',
+                    source_currency=source_currency,
+                    source_amount=source_amount,
+                    destination_currency=destination_currency,
+                    network=network,
+                    widget_url=transaction_data.get('link'),
+                    provider_transaction_id=url_hash,
+                    provider_data={
+                        'flow_type': flow_type,
+                        'fiat_type': fiat_type,
+                        'response': transaction_data
+                    }
+                )
+            
+            # ✅ STORE IN CACHE (for webhooks - works for both auth and non-auth)
+            transaction_key = f"txn_onramp_{url_hash}"
+            transaction_record = {
+                'transaction_id': transaction_key,
+                'db_id': db_transaction.id if db_transaction else None,  # Link to DB
+                'provider': 'ONRAMP',
+                'status': 'PENDING',
+                'url_hash': url_hash,
+                'widget_url': transaction_data.get('link'),
+                'created_at': int(time.time() * 1000),
+                'flow_type': 'BUY' if flow_type == 1 else 'SELL',
+                'source_currency': source_currency,
+                'destination_currency': destination_currency,
+                'amount': source_amount,
+                'network': network,
+            }
+            
+            cache.set(transaction_key, transaction_record, timeout=86400)
+            
+            return Response({
                 "success": True,
                 "widgetUrl": transaction_data.get("link"),
-                "paymentUrl": transaction_data.get("link"),
-                "transactionId": transaction_key,
+                "transactionId": db_transaction.transaction_id if db_transaction else transaction_key,
                 "urlHash": url_hash,
-                "data": transaction_data
-            },
-            status=status.HTTP_200_OK,
-        )
+            })
 
     except Exception as e:
         logger.error(f"Generate URL Error: {str(e)}", exc_info=True)
@@ -919,6 +939,34 @@ def onramp_webhook(request):
                 
                 # Save updated transaction
                 cache.set(transaction_key, transaction_record, timeout=86400)
+
+                # UPDATE DATABASE
+                db_id = transaction_record.get('db_id')
+                if db_id:
+                    try:
+                        txn = Transaction.objects.get(id=db_id)
+                        txn.status = mapped_status
+                        txn.provider_reference_id = reference_id
+                        
+                        # Update provider_data with webhook info
+                        if not txn.provider_data:
+                            txn.provider_data = {}
+                        txn.provider_data['webhook_data'] = data
+                        txn.provider_data['last_event_id'] = event_id
+                        txn.provider_data['event_type'] = event_type
+                        
+                        if mapped_status == 'COMPLETED':
+                            txn.completed_at = timezone.now()
+                        
+                        if failure_reasons:
+                            txn.failure_reason = failure_reasons
+                        
+                        txn.save()
+                        
+                        logger.info(f"✅ Updated DB transaction {db_id} to {mapped_status}")
+                        
+                    except Transaction.DoesNotExist:
+                        logger.error(f"❌ DB transaction {db_id} not found")
                 
                 logger.info(
                     f"✅ Updated OnRamp transaction {transaction_key}\n"
