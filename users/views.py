@@ -133,12 +133,23 @@ class SignupView(APIView):
         serializer = SignUpSerializer(data=request.data)
 
         if resend:
+            if not serializer.is_valid():
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+            user = Users.objects.filter(email=serializer.validated_data['email']).first()
+            if not user:
+                return Response({'detail': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+
             otp_code = generate_otp()
-            EmailOTP.objects.create(user=serializer.email, otp=otp_code)
-            # send_reg_otp_email(user, otp_code)
-            send_email(serializer,"Registration Verification Code", "Use the code below to verify your account.", code=otp_code)
+            EmailOTP.objects.create(user=user, otp=otp_code)
+            send_email(
+                user,
+                "Bitexly Registration Verification Code",
+                "Use the code below to verify your account.",
+                code=otp_code
+            )
             return Response({'detail': 'OTP resent to your email.'}, status=status.HTTP_200_OK)
-        
+
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -148,16 +159,20 @@ class SignupView(APIView):
         if existing_user:
             if existing_user.is_email_verified:
                 return Response({'detail': 'Email already verified.'}, status=status.HTTP_400_BAD_REQUEST)
-           
             user = existing_user
         else:
-            user = serializer.save() 
+            user = serializer.save()
 
         otp = generate_otp()
         EmailOTP.objects.create(user=user, otp=otp)
-        send_email(user,"Registration Verification Code", "Use the code below to verify your email.", code=otp)
+        send_email(
+            user,
+            "Bitexly Registration Verification Code",
+            "Use the code below to verify your email.",
+            code=otp
+        )
 
-        return Response({'detail': 'OTP sent to your email.', 'otp': otp}, status=status.HTTP_200_OK)
+        return Response({'detail': 'OTP sent to your email.'}, status=status.HTTP_200_OK)
 
     @swagger_auto_schema(request_body=CompleteRegistrationSerializer, responses={201: openapi.Response(
             description="Registration Completed, Signin to access your account!.",
@@ -170,9 +185,19 @@ class SignupView(APIView):
     def patch(self, request):
         serializer = CompleteRegistrationSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save()
-            # send_email(request.user,"Welcome to foodhybrid!","Your account has successfully been created with foodhybrid, Kindly Signin to access your account!.",)
-            return Response({'detail': 'Registeration Completed, Signin to access your account!.'}, status=status.HTTP_200_OK)
+            user = serializer.save()
+
+            send_email(
+                user,
+                "Welcome to Bitexly",
+                "You’re all set. Buy, sell, and swap crypto effortlessly on Bitexly.",
+            )
+
+            return Response(
+                {'detail': 'Registration completed. Sign in to access your Bitexly account.'},
+                status=status.HTTP_200_OK
+            )
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 class VerifyOTPView(APIView):
@@ -199,17 +224,19 @@ class VerifyOTPView(APIView):
 
         user = Users.objects.filter(email=email).first()
         if not user:
-            return Response({'detail': 'Invalid email, Please sign up'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': 'Invalid email, please sign up.'}, status=status.HTTP_400_BAD_REQUEST)
 
         otp_record = EmailOTP.objects.filter(user=user, otp=otp_input).first()
-        print(otp_input, user)
         if otp_record:
             user.is_email_verified = True
             user.save()
             EmailOTP.objects.filter(user=user).delete()
 
-            return Response({'detail': 'Email verified successfully. Go ahead and complete your signup process!'}, status=status.HTTP_200_OK)
-        
+            return Response(
+                {'detail': 'Email verified successfully. Complete your signup process!'},
+                status=status.HTTP_200_OK
+            )
+
         return Response({'detail': 'Invalid or expired OTP.'}, status=status.HTTP_400_BAD_REQUEST)
 
 class PasswordResetView(APIView):
