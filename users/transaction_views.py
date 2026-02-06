@@ -417,23 +417,30 @@ class TransactionDetailView(APIView):
 
 
 # ============================================================================
-# EXPORT TRANSACTIONS (CSV/JSON) - FIXED VERSION
+# EXPORT TRANSACTIONS (CSV/JSON)
 # ============================================================================
 class ExportTransactionsView(APIView):
     """
     Export transactions as CSV or JSON.
-    Query param: format=csv or format=json (default: json)
+    Query param: export_format=csv or export_format=json (default: json)
+    
+    We use 'export_format' instead of 'format' to avoid conflicts
+    with DRF's built-in format suffix handling.
     """
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
         try:
-            export_format = request.query_params.get('format', 'json').lower()
+            # Use 'export_format' to avoid DRF's format suffix conflicts
+            export_format = request.query_params.get('export_format', 
+                           request.query_params.get('format', 'json')).lower()
+            
+            logger.info(f"Export request: format={export_format}, user={request.user.email}")
             
             # Get user transactions
             transactions = Transaction.objects.filter(user=request.user).order_by('-created_at')
             
-            # ✅ Handle empty transactions BEFORE format check
+            # Handle empty transactions BEFORE format check
             if transactions.count() == 0:
                 if export_format == 'csv':
                     # For CSV, return empty CSV file with just headers
@@ -449,10 +456,11 @@ class ExportTransactionsView(APIView):
                         'Source Currency', 'Source Amount', 'Destination Currency', 
                         'Destination Amount', 'Exchange Rate', 'Total Fees', 'Network'
                     ])
-                    # No data rows, just headers
+                    logger.info("Returning empty CSV file")
                     return response
                 else:
                     # For JSON, return empty array
+                    logger.info("Returning empty JSON array")
                     return Response({
                         "success": True,
                         "count": 0,
@@ -461,7 +469,7 @@ class ExportTransactionsView(APIView):
                         "exported_at": timezone.now().isoformat()
                     }, status=status.HTTP_200_OK)
             
-            # ✅ Export with data
+            # Export with data
             if export_format == 'csv':
                 import csv
                 from django.http import HttpResponse
@@ -492,10 +500,12 @@ class ExportTransactionsView(APIView):
                         txn.network or ''
                     ])
                 
+                logger.info(f"Returning CSV file with {transactions.count()} transactions")
                 return response
             
             else:  # JSON
                 serializer = TransactionSerializer(transactions, many=True)
+                logger.info(f"Returning JSON with {transactions.count()} transactions")
                 return Response({
                     "success": True,
                     "count": transactions.count(),
@@ -506,8 +516,10 @@ class ExportTransactionsView(APIView):
         except Exception as e:
             logger.error(f"Export error: {str(e)}", exc_info=True)
             
-            # ✅ Return appropriate error format based on requested format
-            export_format = request.query_params.get('format', 'json').lower()
+            # Return appropriate error format based on requested format
+            export_format = request.query_params.get('export_format', 
+                           request.query_params.get('format', 'json')).lower()
+            
             if export_format == 'csv':
                 # For CSV errors, return a plain text response
                 from django.http import HttpResponse
