@@ -63,6 +63,7 @@ INSTALLED_APPS = [
     'moonpay',
     'onramp',
     'finchpay',
+    'exolix',
 
     'allauth',
     'allauth.account',
@@ -259,6 +260,9 @@ MOONPAY_WEBHOOK_KEY = config("MOONPAY_WEBHOOK_KEY")
 # FinchPay Configurations
 FINCHPAY_API_KEY = config("FINCHPAY_API_KEY")
 FINCHPAY_SECRET_KEY = config("FINCHPAY_SECRET_KEY")
+
+# Exolix Configuration
+EXOLIX_API_KEY= config("EXOLIX_API_KEY")
 
 # Media files
 MEDIA_URL = '/media/'
