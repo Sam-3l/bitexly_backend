@@ -23,14 +23,12 @@ urlpatterns = [
     # path('notifications/partner/', NotificationListView.as_view(), name="get-notified"),
     # path('notification/read/', NotificationMarkAsReadView.as_view(), name="mark-read-notification"),
     path('getDetails/', DetailsView.as_view(), name="partner-details"),
+    
     # ============================================================================
     # TRANSACTION HISTORY & STATISTICS
-    # ============================================================================
+    # ============================================================================    
     # Main transaction history with filters
     path('transactions/history/', TransactionHistoryView.as_view(), name='transaction-history'),
-    
-    # Get specific transaction details
-    path('transactions/<str:transaction_id>/', TransactionDetailView.as_view(), name='transaction-detail'),
     
     # Full statistics with breakdowns
     path('transactions/stats/full/', TransactionStatisticsView.as_view(), name='transaction-statistics'),
@@ -43,6 +41,9 @@ urlpatterns = [
     
     # Export transactions (CSV/JSON)
     path('transactions/export/', ExportTransactionsView.as_view(), name='export-transactions'),
+    
+    # Get specific transaction details
+    path('transactions/<str:transaction_id>/', TransactionDetailView.as_view(), name='transaction-detail'),
     
     # ============================================================================
     # OLD TRANSACTION ENDPOINTS (Keep for backward compatibility)
