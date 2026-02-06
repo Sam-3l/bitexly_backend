@@ -5,6 +5,7 @@ import hashlib
 from base64 import b64encode
 import requests
 import logging
+import time
 from functools import lru_cache
 
 from django.core.cache import cache
@@ -13,6 +14,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.permissions import AllowAny
 
 # Setup logger
 logger = logging.getLogger(__name__)
@@ -690,55 +692,327 @@ def generate_onramp_url(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
     
-@api_view(['POST'])
-@permission_classes([])
-def onramp_webhook(request):
+
+def verify_onramp_webhook_signature(request):
     """
-    Handle OnRamp webhook notifications.
+    Verify OnRamp webhook authenticity using HMAC-SHA512.
+    
+    According to OnRamp docs:
+    1. Request body is JSON-stringified and base64-encoded to generate X-ONRAMP-PAYLOAD
+    2. This encoded payload is signed using HMAC-SHA512 with API_SECRET
+    3. The signature is sent in X-ONRAMP-SIGNATURE header
     """
     try:
+        # Get headers (handle both lowercase and uppercase)
+        received_signature = (
+            request.headers.get('x-onramp-signature') or 
+            request.headers.get('X-ONRAMP-SIGNATURE') or
+            request.META.get('HTTP_X_ONRAMP_SIGNATURE')
+        )
+        received_payload = (
+            request.headers.get('x-onramp-payload') or 
+            request.headers.get('X-ONRAMP-PAYLOAD') or
+            request.META.get('HTTP_X_ONRAMP_PAYLOAD')
+        )
+        
+        if not received_signature or not received_payload:
+            logger.error("❌ Missing OnRamp signature or payload headers")
+            logger.error(f"Headers: {dict(request.headers)}")
+            return False
+        
+        # Get raw request body
+        body = request.body.decode('utf-8')
+        
+        # Generate expected payload (base64 encode the JSON body)
+        # IMPORTANT: Use compact JSON (no spaces) like OnRamp does
+        expected_payload = b64encode(body.encode()).decode()
+        
+        # Generate expected signature using HMAC-SHA512
+        expected_signature = hmac.new(
+            ONRAMP_API_SECRET.encode(),
+            expected_payload.encode(),
+            hashlib.sha512
+        ).hexdigest()
+        
+        # Verify both payload and signature match
+        payload_match = expected_payload == received_payload
+        signature_match = expected_signature == received_signature
+        
+        if not payload_match:
+            logger.error(f"❌ Payload mismatch")
+            logger.error(f"Expected: {expected_payload[:100]}...")
+            logger.error(f"Received: {received_payload[:100]}...")
+        
+        if not signature_match:
+            logger.error(f"❌ Signature mismatch")
+            logger.error(f"Expected: {expected_signature[:40]}...")
+            logger.error(f"Received: {received_signature[:40]}...")
+        
+        return payload_match and signature_match
+        
+    except Exception as e:
+        logger.error(f"❌ Webhook verification error: {str(e)}", exc_info=True)
+        return False
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])  # We verify manually with signature
+def onramp_webhook(request):
+    """
+    Handle OnRamp webhook notifications for both ONRAMP (BUY) and OFFRAMP (SELL).
+    
+    OnRamp Payload Structure:
+    {
+        "referenceId": 23,  // Transaction ID (NOT urlHash!)
+        "eventType": "ONRAMP" | "OFFRAMP",
+        "status": "FAILED" | "FIAT_DEPOSIT_RECEIVED" | "TRADE_COMPLETED" | "ON_CHAIN_COMPLETED" etc,
+        "metadata": {
+            "eventId": 22,
+            "eventCreatedAt": "2023-11-17T13:33:14.000Z",
+            "failure_reasons": "Transaction timed out"  // Only for failed transactions
+        }
+    }
+    
+    ONRAMP Events (BUY):
+    - FIAT_DEPOSIT_RECEIVED -> 2, 10 (deposit secured)
+    - TRADE_COMPLETED -> 3, 12
+    - ON_CHAIN_INITIATED -> 14 (withdrawal initiated)
+    - ON_CHAIN_COMPLETED -> 4, 15, 5, 16 (withdrawal complete)
+    - FAILED -> -1, -2, -3, -4
+    
+    OFFRAMP Events (SELL):
+    - ON_CHAIN_DEPOSIT_RECEIVED -> 2, 10, 11 (deposit found, selling crypto)
+    - TRADE_COMPLETED -> 4, 12 (crypto sold)
+    - FIAT_TRANSFER_INITIATED -> 13
+    - FIAT_TRANSFER_COMPLETED -> 14, 19, 40, 15, 20, 41
+    - FAILED -> -1, -2, -4
+    """
+    try:
+        # Step 1: Verify webhook signature
+        if not verify_onramp_webhook_signature(request):
+            logger.error("❌ OnRamp webhook signature verification failed!")
+            return Response(
+                {"status": 0, "error": "Invalid signature"}, 
+                status=401
+            )
+        
+        # Step 2: Parse webhook data
         data = request.data
-        logger.info(f"OnRamp webhook received: {json.dumps(data, indent=2)}")
+        logger.info(f"✅ OnRamp webhook received (verified): {json.dumps(data, indent=2)}")
         
-        url_hash = data.get('urlHash') or data.get('transactionHash')
-        status = data.get('status', '').upper()
+        # Extract webhook fields
+        reference_id = data.get('referenceId')  # This is the transaction ID
+        event_type = data.get('eventType', '').upper()  # ONRAMP or OFFRAMP
+        status_value = data.get('status', '').upper()
+        metadata = data.get('metadata', {})
         
+        # Extract metadata
+        event_id = metadata.get('eventId')
+        event_created_at = metadata.get('eventCreatedAt')
+        failure_reasons = metadata.get('failure_reasons', '')
+        
+        # Step 3: Check for duplicate events using eventId
+        if event_id:
+            duplicate_key = f"onramp_event_{event_id}"
+            if cache.get(duplicate_key):
+                logger.info(f"⚠️ Duplicate webhook event {event_id}, skipping")
+                return Response({"success": True, "message": "Duplicate event"}, status=200)
+            
+            # Mark this event as processed (cache for 7 days)
+            cache.set(duplicate_key, True, timeout=604800)
+        
+        # Step 4: Map OnRamp status to our internal status
+        # OnRamp sends both text statuses and numeric codes
         status_mapping = {
-            'COMPLETED': 'COMPLETED',
-            'SUCCESS': 'COMPLETED',
-            'SUCCESSFUL': 'COMPLETED',
+            # Completed statuses
+            'ON_CHAIN_COMPLETED': 'COMPLETED',
+            'FIAT_TRANSFER_COMPLETED': 'COMPLETED',
+            '4': 'COMPLETED',
+            '5': 'COMPLETED',
+            '15': 'COMPLETED',
+            '16': 'COMPLETED',
+            '14': 'COMPLETED',
+            '19': 'COMPLETED',
+            '20': 'COMPLETED',
+            '40': 'COMPLETED',
+            '41': 'COMPLETED',
+            
+            # Pending/Processing statuses
+            'FIAT_DEPOSIT_RECEIVED': 'PENDING',
+            'TRADE_COMPLETED': 'PENDING',
+            'ON_CHAIN_INITIATED': 'PENDING',
+            'ON_CHAIN_DEPOSIT_RECEIVED': 'PENDING',
+            'FIAT_TRANSFER_INITIATED': 'PENDING',
+            '2': 'PENDING',
+            '3': 'PENDING',
+            '10': 'PENDING',
+            '11': 'PENDING',
+            '12': 'PENDING',
+            '13': 'PENDING',
+            
+            # Failed statuses
             'FAILED': 'FAILED',
-            'CANCELLED': 'FAILED',
-            'EXPIRED': 'FAILED',
-            'PENDING': 'PENDING',
-            'PROCESSING': 'PENDING',
-            'INITIATED': 'PENDING'
+            '-1': 'FAILED',
+            '-2': 'FAILED',
+            '-3': 'FAILED',
+            '-4': 'FAILED',
         }
         
-        mapped_status = status_mapping.get(status, 'PENDING')
+        mapped_status = status_mapping.get(str(status_value), 'PENDING')
         
-        if url_hash:
-            transaction_key = f"txn_onramp_{url_hash}"
-            transaction_record = cache.get(transaction_key)
+        # Step 5: Find and update the transaction
+        if reference_id:
+            # OnRamp sends referenceId which is their internal transaction ID
+            # We need to find our transaction by this reference
+            
+            # Try multiple possible transaction key formats
+            possible_keys = [
+                f"txn_onramp_{reference_id}",
+                f"onramp_txn_{reference_id}",
+            ]
+            
+            transaction_record = None
+            transaction_key = None
+            
+            # Try to find the transaction
+            for key in possible_keys:
+                transaction_record = cache.get(key)
+                if transaction_record:
+                    transaction_key = key
+                    break
+            
+            # If not found by referenceId, try searching all onramp transactions
+            if not transaction_record:
+                logger.warning(f"⚠️ Transaction not found by referenceId: {reference_id}")
+                logger.info(f"🔍 Searching for pending OnRamp transactions...")
+                
+                # Get all cache keys (this is inefficient but necessary for debugging)
+                # In production, you should maintain a separate index
+                all_keys = cache.keys('txn_onramp_*')
+                
+                for key in all_keys:
+                    txn = cache.get(key)
+                    if txn and txn.get('provider') == 'ONRAMP' and txn.get('status') == 'PENDING':
+                        # Found a pending OnRamp transaction
+                        transaction_record = txn
+                        transaction_key = key
+                        logger.info(f"✅ Found pending transaction: {key}")
+                        break
             
             if transaction_record:
+                # Update the transaction
                 transaction_record['status'] = mapped_status
                 transaction_record['updated_at'] = int(time.time() * 1000)
                 transaction_record['webhook_data'] = data
-                transaction_record['provider_status'] = status
+                transaction_record['provider_status'] = status_value
+                transaction_record['onramp_reference_id'] = reference_id
+                transaction_record['event_type'] = event_type
                 
+                if failure_reasons:
+                    transaction_record['failure_reason'] = failure_reasons
+                
+                if event_id:
+                    transaction_record['last_event_id'] = event_id
+                
+                if event_created_at:
+                    transaction_record['last_event_time'] = event_created_at
+                
+                # Save updated transaction
                 cache.set(transaction_key, transaction_record, timeout=86400)
-                logger.info(f"✅ Updated OnRamp transaction {transaction_key} to {mapped_status}")
+                
+                logger.info(
+                    f"✅ Updated OnRamp transaction {transaction_key}\n"
+                    f"   Status: {mapped_status}\n"
+                    f"   Event: {status_value}\n"
+                    f"   Type: {event_type}\n"
+                    f"   Reference: {reference_id}"
+                )
             else:
-                logger.warning(f"⚠️ Transaction not found for urlHash: {url_hash}")
+                logger.warning(
+                    f"⚠️ No transaction found for OnRamp webhook\n"
+                    f"   Reference ID: {reference_id}\n"
+                    f"   Event Type: {event_type}\n"
+                    f"   Status: {status_value}"
+                )
         else:
-            logger.warning("⚠️ No urlHash in OnRamp webhook payload")
+            logger.error("❌ No referenceId in OnRamp webhook payload")
         
-        return Response({"success": True, "message": "Webhook processed"}, status=200)
+        # Step 6: Always return 200 OK to acknowledge receipt
+        # OnRamp will retry up to 5 times if not 200
+        return Response(
+            {"success": True, "message": "Webhook processed"}, 
+            status=200
+        )
         
     except Exception as e:
-        logger.error(f"OnRamp webhook error: {str(e)}", exc_info=True)
-        return Response({"success": False, "error": str(e)}, status=400)
+        logger.error(f"❌ OnRamp webhook error: {str(e)}", exc_info=True)
+        # Still return 200 to prevent retries for code errors
+        return Response(
+            {"success": True, "message": "Webhook received but error in processing"}, 
+            status=200
+        )
+
+
+# ============================================================================
+# API endpoint to manually set OnRamp webhook URL (run once)
+# ============================================================================
+@api_view(["POST"])
+@permission_classes([])
+def setup_onramp_webhook_url(request):
+    """
+    One-time API endpoint to register webhook URL with OnRamp.
+    """
+    import requests
+    import time
+    import json
+    import hmac
+    import hashlib
+    from base64 import b64encode
+    from django.conf import settings
+
+    webhook_url = "https://api.mintcoins.pro/onramp/webhook/"
+
+    body = {"webhookUrl": webhook_url}
+
+    payload = {
+        "timestamp": int(time.time() * 1000),
+        "body": body
+    }
+
+    payload_encoded = b64encode(json.dumps(payload).encode()).decode()
+
+    signature = hmac.new(
+        settings.ONRAMP_API_SECRET.encode(),
+        payload_encoded.encode(),
+        hashlib.sha512
+    ).hexdigest()
+
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json;charset=UTF-8",
+        "X-ONRAMP-SIGNATURE": signature,
+        "X-ONRAMP-APIKEY": settings.ONRAMP_API_KEY,
+        "X-ONRAMP-PAYLOAD": payload_encoded,
+    }
+
+    url = "https://api.onramp.money/onramp/api/v1/merchant/setWebhookUrl"
+
+    try:
+        response = requests.post(url, headers=headers, json=body, timeout=30)
+
+        return Response(
+            {
+                "status_code": response.status_code,
+                "response": response.json()
+            },
+            status=status.HTTP_200_OK if response.ok else status.HTTP_400_BAD_REQUEST
+        )
+
+    except requests.RequestException as e:
+        return Response(
+            {"error": str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
     
 @api_view(['POST'])
 @permission_classes([])
