@@ -29,143 +29,88 @@ def parse_coin_and_network(coin_code):
     """
     Parse Changelly-style coin codes into Exolix format (coin + network).
     
-    Changelly format: USDTTRC20, USDTERC20, BTCBEP20, etc.
-    Exolix format: coin=USDT, network=TRX / coin=USDT, network=ETH
+    Changelly format: USDTRX, USDTSOL, ETHBSC, BTCBSC, etc.
+    Exolix format: coin=USDT, network=TRX / coin=USDT, network=SOL
     
     Returns: (coin, network)
     """
     coin_upper = coin_code.upper()
     
-    # Special mappings for network-specific coins
-    network_mappings = {
-        # USDT variants
-        'USDTTRC20': ('USDT', 'TRX'),
-        'USDTERC20': ('USDT', 'ETH'),
-        'USDTBEP20': ('USDT', 'BSC'),
-        'USDTPOLYGON': ('USDT', 'POLYGON'),
-        'USDTMATIC': ('USDT', 'POLYGON'),
-        'USDTSOL': ('USDT', 'SOL'),
-        'USDTAVAX': ('USDT', 'AVAX'),
-        'USDTARBITRUM': ('USDT', 'ARBITRUM'),
-        'USDTOPTIMISM': ('USDT', 'OPTIMISM'),
-        
-        # USDC variants
-        'USDCTRC20': ('USDC', 'TRX'),
-        'USDCERC20': ('USDC', 'ETH'),
-        'USDCBEP20': ('USDC', 'BSC'),
-        'USDCPOLYGON': ('USDC', 'POLYGON'),
-        'USDCMATIC': ('USDC', 'POLYGON'),
-        'USDCSOL': ('USDC', 'SOL'),
-        'USDCAVAX': ('USDC', 'AVAX'),
-        'USDCARBITRUM': ('USDC', 'ARBITRUM'),
-        'USDCOPTIMISM': ('USDC', 'OPTIMISM'),
-        
-        # DAI variants
-        'DAIERC20': ('DAI', 'ETH'),
-        'DAIBEP20': ('DAI', 'BSC'),
-        'DAIPOLYGON': ('DAI', 'POLYGON'),
-        
-        # Other stablecoins
-        'BUSDBEP20': ('BUSD', 'BSC'),
-        'BUSDERC20': ('BUSD', 'ETH'),
-        
-        # Wrapped tokens
-        'WBTCERC20': ('WBTC', 'ETH'),
-        'WBTCBEP20': ('WBTC', 'BSC'),
-        'WBTCPOLYGON': ('WBTC', 'POLYGON'),
-        
-        'WETHERC20': ('WETH', 'ETH'),
-        'WETHBEP20': ('WETH', 'BSC'),
-        'WETHPOLYGON': ('WETH', 'POLYGON'),
-        
-        # ETH on other chains
-        'ETHBEP20': ('ETH', 'BSC'),
-        'ETHPOLYGON': ('ETH', 'POLYGON'),
-        'ETHARBITRUM': ('ETH', 'ARBITRUM'),
-        'ETHOPTIMISM': ('ETH', 'OPTIMISM'),
-        
-        # BTC on other chains
-        'BTCBEP20': ('BTC', 'BSC'),
-        'BTCPOLYGON': ('BTC', 'POLYGON'),
-        
-        # BNB variants
-        'BNBBEP20': ('BNB', 'BSC'),
-        'BNBERC20': ('BNB', 'ETH'),
-        
-        # SHIB variants
-        'SHIBERC20': ('SHIB', 'ETH'),
-        'SHIBBEP20': ('SHIB', 'BSC'),
-        
-        # LINK variants
-        'LINKERC20': ('LINK', 'ETH'),
-        'LINKBEP20': ('LINK', 'BSC'),
-        
-        # UNI variants
-        'UNIERC20': ('UNI', 'ETH'),
-        'UNIBEP20': ('UNI', 'BSC'),
+    # Define known base coins (stablecoins and major tokens that appear on multiple chains)
+    multi_chain_coins = {
+        'USDT': ['TRX', 'ETH', 'BSC', 'POLYGON', 'SOL', 'AVAX', 'ARBITRUM', 'OPTIMISM', 'BASE', 'TON', 'NEAR'],
+        'USDC': ['TRX', 'ETH', 'BSC', 'POLYGON', 'SOL', 'AVAX', 'ARBITRUM', 'OPTIMISM', 'BASE'],
+        'DAI': ['ETH', 'BSC', 'POLYGON', 'AVAX', 'ARBITRUM', 'OPTIMISM'],
+        'BUSD': ['BSC', 'ETH'],
+        'WBTC': ['ETH', 'BSC', 'POLYGON', 'AVAX', 'ARBITRUM'],
+        'WETH': ['ETH', 'BSC', 'POLYGON', 'ARBITRUM', 'OPTIMISM'],
+        'ETH': ['ETH', 'BSC', 'POLYGON', 'ARBITRUM', 'OPTIMISM', 'BASE'],
+        'BTC': ['BTC', 'BSC', 'POLYGON'],
+        'BNB': ['BSC', 'ETH'],
+        'SHIB': ['ETH', 'BSC'],
+        'LINK': ['ETH', 'BSC', 'POLYGON', 'ARBITRUM'],
+        'UNI': ['ETH', 'BSC', 'POLYGON', 'ARBITRUM'],
+        'MATIC': ['POLYGON', 'ETH', 'BSC'],
     }
     
-    # Check if it's in our mapping
-    if coin_upper in network_mappings:
-        return network_mappings[coin_upper]
-    
-    # Try to extract network suffix
-    network_suffixes = {
-        'TRC20': 'TRX',
-        'ERC20': 'ETH',
-        'BEP20': 'BSC',
-        'POLYGON': 'POLYGON',
-        'MATIC': 'POLYGON',
-        'SOL': 'SOL',
-        'SOLANA': 'SOL',
-        'AVAX': 'AVAX',
-        'AVALANCHE': 'AVAX',
-        'ARBITRUM': 'ARBITRUM',
-        'OPTIMISM': 'OPTIMISM',
-        'BASE': 'BASE',
-    }
-    
-    for suffix, network in network_suffixes.items():
-        if coin_upper.endswith(suffix):
-            # Extract base coin (remove suffix)
-            base_coin = coin_upper[:-len(suffix)]
-            return (base_coin, network)
+    # Try to match multi-chain tokens
+    # Format: USDTRX, USDTSOL, ETHBSC, etc.
+    for base_coin, networks in multi_chain_coins.items():
+        for network in networks:
+            # Check if coin_code matches pattern: BASECOIN + NETWORK
+            if coin_upper == f"{base_coin}{network}":
+                logger.info(f"Matched {coin_upper} -> coin={base_coin}, network={network}")
+                return (base_coin, network)
     
     # Native coins - use same for coin and network
     native_coins = {
-        'BTC': ('BTC', 'BTC'),
-        'ETH': ('ETH', 'ETH'),
-        'LTC': ('LTC', 'LTC'),
-        'BCH': ('BCH', 'BCH'),
-        'DOGE': ('DOGE', 'DOGE'),
-        'XRP': ('XRP', 'XRP'),
-        'ADA': ('ADA', 'ADA'),
-        'DOT': ('DOT', 'DOT'),
-        'TRX': ('TRX', 'TRX'),
-        'BNB': ('BNB', 'BSC'),  # BNB is native to BSC
-        'SOL': ('SOL', 'SOL'),
-        'MATIC': ('MATIC', 'POLYGON'),
-        'AVAX': ('AVAX', 'AVAX'),
-        'XMR': ('XMR', 'XMR'),
-        'ATOM': ('ATOM', 'ATOM'),
-        'XLM': ('XLM', 'XLM'),
-        'NEAR': ('NEAR', 'NEAR'),
-        'FTM': ('FTM', 'FTM'),
-        'ALGO': ('ALGO', 'ALGO'),
-        'VET': ('VET', 'VET'),
-        'ICP': ('ICP', 'ICP'),
-        'FIL': ('FIL', 'FIL'),
-        'HBAR': ('HBAR', 'HBAR'),
-        'APT': ('APT', 'APT'),
-        'SUI': ('SUI', 'SUI'),
-        'TON': ('TON', 'TON'),
+        'BTC': 'BTC',
+        'ETH': 'ETH',
+        'LTC': 'LTC',
+        'BCH': 'BCH',
+        'DOGE': 'DOGE',
+        'XRP': 'XRP',
+        'ADA': 'ADA',
+        'DOT': 'DOT',
+        'TRX': 'TRX',
+        'BNB': 'BSC',  # BNB native to BSC
+        'SOL': 'SOL',
+        'MATIC': 'POLYGON',
+        'AVAX': 'AVAX',
+        'XMR': 'XMR',
+        'ATOM': 'ATOM',
+        'XLM': 'XLM',
+        'NEAR': 'NEAR',
+        'FTM': 'FTM',
+        'ALGO': 'ALGO',
+        'VET': 'VET',
+        'ICP': 'ICP',
+        'FIL': 'FIL',
+        'HBAR': 'HBAR',
+        'APT': 'APT',
+        'SUI': 'SUI',
+        'TON': 'TON',
+        'OP': 'OPTIMISM',
+        'ARB': 'ARBITRUM',
+        'CELO': 'CELO',
+        'KAVA': 'KAVA',
+        'ONE': 'ONE',
+        'ZIL': 'ZIL',
+        'EOS': 'EOS',
+        'XTZ': 'XTZ',
+        'DASH': 'DASH',
+        'ZEC': 'ZEC',
+        'ETC': 'ETC',
+        'WAVES': 'WAVES',
     }
     
     if coin_upper in native_coins:
-        return native_coins[coin_upper]
+        network = native_coins[coin_upper]
+        logger.info(f"Native coin {coin_upper} -> coin={coin_upper}, network={network}")
+        return (coin_upper, network)
     
     # Default: assume it's a native coin (use same for both)
-    logger.warning(f"⚠️ Unknown coin format '{coin_code}', using as-is for both coin and network")
+    logger.warning(f"Unknown coin format '{coin_code}', using as-is for both coin and network")
     return (coin_upper, coin_upper)
 
 
@@ -404,7 +349,7 @@ def get_exolix_rate(request):
         if response.status_code != 200:
             error_data = response.json()
             return Response(
-                {"success": False, "message": "Failed to get rate", "details": error_data, "deubg": {"requestParams": params}},
+                {"success": False, "message": "Failed to get rate", "details": error_data},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         
