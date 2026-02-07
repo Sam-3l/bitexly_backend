@@ -22,6 +22,153 @@ EXOLIX_API_BASE_URL = "https://exolix.com/api/v2"
 EXOLIX_API_KEY = getattr(settings, 'EXOLIX_API_KEY', None)
 
 
+# ============================================================================
+# COIN & NETWORK MAPPING FOR EXOLIX
+# ============================================================================
+def parse_coin_and_network(coin_code):
+    """
+    Parse Changelly-style coin codes into Exolix format (coin + network).
+    
+    Changelly format: USDTTRC20, USDTERC20, BTCBEP20, etc.
+    Exolix format: coin=USDT, network=TRX / coin=USDT, network=ETH
+    
+    Returns: (coin, network)
+    """
+    coin_upper = coin_code.upper()
+    
+    # Special mappings for network-specific coins
+    network_mappings = {
+        # USDT variants
+        'USDTTRC20': ('USDT', 'TRX'),
+        'USDTERC20': ('USDT', 'ETH'),
+        'USDTBEP20': ('USDT', 'BSC'),
+        'USDTPOLYGON': ('USDT', 'POLYGON'),
+        'USDTMATIC': ('USDT', 'POLYGON'),
+        'USDTSOL': ('USDT', 'SOL'),
+        'USDTAVAX': ('USDT', 'AVAX'),
+        'USDTARBITRUM': ('USDT', 'ARBITRUM'),
+        'USDTOPTIMISM': ('USDT', 'OPTIMISM'),
+        
+        # USDC variants
+        'USDCTRC20': ('USDC', 'TRX'),
+        'USDCERC20': ('USDC', 'ETH'),
+        'USDCBEP20': ('USDC', 'BSC'),
+        'USDCPOLYGON': ('USDC', 'POLYGON'),
+        'USDCMATIC': ('USDC', 'POLYGON'),
+        'USDCSOL': ('USDC', 'SOL'),
+        'USDCAVAX': ('USDC', 'AVAX'),
+        'USDCARBITRUM': ('USDC', 'ARBITRUM'),
+        'USDCOPTIMISM': ('USDC', 'OPTIMISM'),
+        
+        # DAI variants
+        'DAIERC20': ('DAI', 'ETH'),
+        'DAIBEP20': ('DAI', 'BSC'),
+        'DAIPOLYGON': ('DAI', 'POLYGON'),
+        
+        # Other stablecoins
+        'BUSDBEP20': ('BUSD', 'BSC'),
+        'BUSDERC20': ('BUSD', 'ETH'),
+        
+        # Wrapped tokens
+        'WBTCERC20': ('WBTC', 'ETH'),
+        'WBTCBEP20': ('WBTC', 'BSC'),
+        'WBTCPOLYGON': ('WBTC', 'POLYGON'),
+        
+        'WETHERC20': ('WETH', 'ETH'),
+        'WETHBEP20': ('WETH', 'BSC'),
+        'WETHPOLYGON': ('WETH', 'POLYGON'),
+        
+        # ETH on other chains
+        'ETHBEP20': ('ETH', 'BSC'),
+        'ETHPOLYGON': ('ETH', 'POLYGON'),
+        'ETHARBITRUM': ('ETH', 'ARBITRUM'),
+        'ETHOPTIMISM': ('ETH', 'OPTIMISM'),
+        
+        # BTC on other chains
+        'BTCBEP20': ('BTC', 'BSC'),
+        'BTCPOLYGON': ('BTC', 'POLYGON'),
+        
+        # BNB variants
+        'BNBBEP20': ('BNB', 'BSC'),
+        'BNBERC20': ('BNB', 'ETH'),
+        
+        # SHIB variants
+        'SHIBERC20': ('SHIB', 'ETH'),
+        'SHIBBEP20': ('SHIB', 'BSC'),
+        
+        # LINK variants
+        'LINKERC20': ('LINK', 'ETH'),
+        'LINKBEP20': ('LINK', 'BSC'),
+        
+        # UNI variants
+        'UNIERC20': ('UNI', 'ETH'),
+        'UNIBEP20': ('UNI', 'BSC'),
+    }
+    
+    # Check if it's in our mapping
+    if coin_upper in network_mappings:
+        return network_mappings[coin_upper]
+    
+    # Try to extract network suffix
+    network_suffixes = {
+        'TRC20': 'TRX',
+        'ERC20': 'ETH',
+        'BEP20': 'BSC',
+        'POLYGON': 'POLYGON',
+        'MATIC': 'POLYGON',
+        'SOL': 'SOL',
+        'SOLANA': 'SOL',
+        'AVAX': 'AVAX',
+        'AVALANCHE': 'AVAX',
+        'ARBITRUM': 'ARBITRUM',
+        'OPTIMISM': 'OPTIMISM',
+        'BASE': 'BASE',
+    }
+    
+    for suffix, network in network_suffixes.items():
+        if coin_upper.endswith(suffix):
+            # Extract base coin (remove suffix)
+            base_coin = coin_upper[:-len(suffix)]
+            return (base_coin, network)
+    
+    # Native coins - use same for coin and network
+    native_coins = {
+        'BTC': ('BTC', 'BTC'),
+        'ETH': ('ETH', 'ETH'),
+        'LTC': ('LTC', 'LTC'),
+        'BCH': ('BCH', 'BCH'),
+        'DOGE': ('DOGE', 'DOGE'),
+        'XRP': ('XRP', 'XRP'),
+        'ADA': ('ADA', 'ADA'),
+        'DOT': ('DOT', 'DOT'),
+        'TRX': ('TRX', 'TRX'),
+        'BNB': ('BNB', 'BSC'),  # BNB is native to BSC
+        'SOL': ('SOL', 'SOL'),
+        'MATIC': ('MATIC', 'POLYGON'),
+        'AVAX': ('AVAX', 'AVAX'),
+        'XMR': ('XMR', 'XMR'),
+        'ATOM': ('ATOM', 'ATOM'),
+        'XLM': ('XLM', 'XLM'),
+        'NEAR': ('NEAR', 'NEAR'),
+        'FTM': ('FTM', 'FTM'),
+        'ALGO': ('ALGO', 'ALGO'),
+        'VET': ('VET', 'VET'),
+        'ICP': ('ICP', 'ICP'),
+        'FIL': ('FIL', 'FIL'),
+        'HBAR': ('HBAR', 'HBAR'),
+        'APT': ('APT', 'APT'),
+        'SUI': ('SUI', 'SUI'),
+        'TON': ('TON', 'TON'),
+    }
+    
+    if coin_upper in native_coins:
+        return native_coins[coin_upper]
+    
+    # Default: assume it's a native coin (use same for both)
+    logger.warning(f"⚠️ Unknown coin format '{coin_code}', using as-is for both coin and network")
+    return (coin_upper, coin_upper)
+
+
 def get_auth_headers():
     """
     Get authorization headers if API key is configured.
@@ -42,7 +189,7 @@ def get_auth_headers():
 
 
 # ------------------------------------------------------------------
-# ✅ GET CURRENCIES - List all available currencies
+# GET CURRENCIES - List all available currencies
 # ------------------------------------------------------------------
 @api_view(["GET"])
 @permission_classes([])
@@ -101,7 +248,7 @@ def get_exolix_currencies(request):
 
 
 # ------------------------------------------------------------------
-# ✅ GET CURRENCY NETWORKS - Get networks for a specific currency
+# GET CURRENCY NETWORKS - Get networks for a specific currency
 # ------------------------------------------------------------------
 @api_view(["GET"])
 @permission_classes([])
@@ -139,7 +286,7 @@ def get_currency_networks(request, currency_code):
 
 
 # ------------------------------------------------------------------
-# ✅ GET ALL NETWORKS - List all available networks
+# GET ALL NETWORKS - List all available networks
 # ------------------------------------------------------------------
 @api_view(["GET"])
 @permission_classes([])
@@ -194,7 +341,7 @@ def get_all_networks(request):
 
 
 # ------------------------------------------------------------------
-# ✅ GET RATE/QUOTE - Get exchange rate and amount estimate
+# GET RATE/QUOTE - Get exchange rate and amount estimate
 # ------------------------------------------------------------------
 @api_view(["POST"])
 @permission_classes([])
@@ -216,32 +363,35 @@ def get_exolix_rate(request):
     try:
         data = request.data
         
-        coin_from = data.get("coinFrom", "").upper()
-        network_from = data.get("networkFrom", "")
-        coin_to = data.get("coinTo", "").upper()
-        network_to = data.get("networkTo", "")
+        coin_from_raw = data.get("coinFrom", "").upper()
+        coin_to_raw = data.get("coinTo", "").upper()
         amount = data.get("amount")
         withdrawal_amount = data.get("withdrawalAmount")
         rate_type = data.get("rateType", "float")
         
         # Validate required fields
-        if not all([coin_from, coin_to]) or not (amount or withdrawal_amount):
+        if not all([coin_from_raw, coin_to_raw]) or not (amount or withdrawal_amount):
             return Response(
                 {"success": False, "message": "coinFrom, coinTo, and amount (or withdrawalAmount) are required"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         
+        # Parse coins and networks
+        coin_from, network_from = parse_coin_and_network(coin_from_raw)
+        coin_to, network_to = parse_coin_and_network(coin_to_raw)
+        
+        logger.info(f"Parsed: {coin_from_raw} -> coin={coin_from}, network={network_from}")
+        logger.info(f"Parsed: {coin_to_raw} -> coin={coin_to}, network={network_to}")
+        
         url = f"{EXOLIX_API_BASE_URL}/rate"
         params = {
             "coinFrom": coin_from,
+            "networkFrom": network_from,
             "coinTo": coin_to,
+            "networkTo": network_to,
             "rateType": rate_type
         }
         
-        if network_from:
-            params["networkFrom"] = network_from
-        if network_to:
-            params["networkTo"] = network_to
         if amount:
             params["amount"] = str(amount)
         if withdrawal_amount:
@@ -262,10 +412,10 @@ def get_exolix_rate(request):
         
         logger.info(f"Exolix Rate Response: {rate_data}")
         
-        # Standardize response similar to other providers
+        # Standardize response
         standardized_quote = {
-            "sourceCurrency": coin_from,
-            "destinationCurrency": coin_to,
+            "sourceCurrency": coin_from_raw,  # Return original format to frontend
+            "destinationCurrency": coin_to_raw,
             "sourceAmount": rate_data.get("fromAmount"),
             "estimatedAmount": rate_data.get("toAmount"),
             "rate": rate_data.get("rate"),
@@ -274,8 +424,8 @@ def get_exolix_rate(request):
             "withdrawMin": rate_data.get("withdrawMin"),
             "message": rate_data.get("message"),
             "rateType": rate_type,
-            "networkFrom": network_from or None,
-            "networkTo": network_to or None,
+            "networkFrom": network_from,
+            "networkTo": network_to,
         }
         
         return Response(
@@ -296,7 +446,7 @@ def get_exolix_rate(request):
 
 
 # ------------------------------------------------------------------
-# ✅ CREATE SWAP TRANSACTION - Create a new swap transaction
+# CREATE SWAP TRANSACTION - Create a new swap transaction
 # ------------------------------------------------------------------
 @api_view(["POST"])
 @permission_classes([])
@@ -323,10 +473,8 @@ def create_swap_transaction(request):
     try:
         data = request.data
         
-        coin_from = data.get("coinFrom", "").upper()
-        network_from = data.get("networkFrom")
-        coin_to = data.get("coinTo", "").upper()
-        network_to = data.get("networkTo")
+        coin_from_raw = data.get("coinFrom", "").upper()
+        coin_to_raw = data.get("coinTo", "").upper()
         amount = data.get("amount")
         withdrawal_amount = data.get("withdrawalAmount")
         withdrawal_address = data.get("withdrawalAddress")
@@ -337,11 +485,18 @@ def create_swap_transaction(request):
         slippage = data.get("slippage")
         
         # Validate required fields
-        if not all([coin_from, network_from, coin_to, network_to, withdrawal_address]) or not (amount or withdrawal_amount):
+        if not all([coin_from_raw, coin_to_raw, withdrawal_address]) or not (amount or withdrawal_amount):
             return Response(
-                {"success": False, "message": "coinFrom, networkFrom, coinTo, networkTo, withdrawalAddress, and amount are required"},
+                {"success": False, "message": "coinFrom, coinTo, withdrawalAddress, and amount are required"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        
+        # Parse coins and networks
+        coin_from, network_from = parse_coin_and_network(coin_from_raw)
+        coin_to, network_to = parse_coin_and_network(coin_to_raw)
+        
+        logger.info(f"Creating transaction: {coin_from_raw} -> coin={coin_from}, network={network_from}")
+        logger.info(f"Creating transaction: {coin_to_raw} -> coin={coin_to}, network={network_to}")
         
         # If slippage is provided, refundAddress is required
         if slippage and not refund_address:
@@ -390,16 +545,16 @@ def create_swap_transaction(request):
         
         exolix_txn_id = result.get("id")
         
-        # ✅ CREATE DATABASE RECORD (if authenticated)
+        # CREATE DATABASE RECORD (if authenticated)
         db_transaction = None
         if should_save_transaction(request):
             db_transaction = create_transaction_record(
                 user=request.user,
                 provider='EXOLIX',
                 transaction_type='SWAP',
-                source_currency=coin_from,
+                source_currency=coin_from_raw,  # Store original format
                 source_amount=result.get("amount"),
-                destination_currency=coin_to,
+                destination_currency=coin_to_raw,
                 destination_amount=result.get("amountTo"),
                 wallet_address=withdrawal_address,
                 provider_transaction_id=exolix_txn_id,
@@ -412,13 +567,15 @@ def create_swap_transaction(request):
                     'refundExtraId': result.get('refundExtraId'),
                     'rate': result.get('rate'),
                     'rateType': result.get('rateType'),
+                    'coinFrom': coin_from,
                     'networkFrom': network_from,
+                    'coinTo': coin_to,
                     'networkTo': network_to,
                     'exolix_result': result
                 }
             )
         
-        # ✅ STORE IN CACHE FOR TRACKING
+        # STORE IN CACHE FOR TRACKING
         timestamp = int(time.time() * 1000)
         transaction_key = f"txn_exolix_{exolix_txn_id}"
         
@@ -429,8 +586,8 @@ def create_swap_transaction(request):
             'status': 'PENDING',
             'created_at': timestamp,
             'exolix_txn_id': exolix_txn_id,
-            'source_currency': coin_from,
-            'destination_currency': coin_to,
+            'source_currency': coin_from_raw,
+            'destination_currency': coin_to_raw,
             'amount': result.get("amount"),
             'estimated_amount': result.get("amountTo"),
             'deposit_address': result.get('depositAddress'),
@@ -446,13 +603,13 @@ def create_swap_transaction(request):
         # Also store by Exolix ID for easy lookup
         cache.set(f"exolix_id_{exolix_txn_id}", transaction_key, timeout=86400)
         
-        # ✅ Enhance response with our transaction ID
+        # Enhance response with our transaction ID
         enhanced_result = result.copy()
         if db_transaction:
             enhanced_result['ourTransactionId'] = db_transaction.transaction_id
             enhanced_result['transactionId'] = db_transaction.transaction_id
         
-        logger.info(f"✅ Created Exolix transaction: {exolix_txn_id} (DB: {db_transaction.id if db_transaction else 'none'})")
+        logger.info(f"Created Exolix transaction: {exolix_txn_id} (DB: {db_transaction.id if db_transaction else 'none'})")
         
         return Response(
             {
@@ -471,7 +628,7 @@ def create_swap_transaction(request):
 
 
 # ------------------------------------------------------------------
-# ✅ GET TRANSACTION STATUS - Check status of a transaction
+# GET TRANSACTION STATUS - Check status of a transaction
 # ------------------------------------------------------------------
 @api_view(["GET"])
 @permission_classes([])
@@ -512,7 +669,7 @@ def get_transaction_status(request, transaction_id):
         
         mapped_status = status_mapping.get(exolix_status, 'PENDING')
         
-        # ✅ UPDATE CACHE
+        # UPDATE CACHE
         transaction_key = cache.get(f"exolix_id_{transaction_id}")
         if not transaction_key:
             transaction_key = f"txn_exolix_{transaction_id}"
@@ -534,7 +691,7 @@ def get_transaction_status(request, transaction_id):
             
             cache.set(transaction_key, transaction_record, timeout=86400)
             
-            # ✅ UPDATE DATABASE
+            # UPDATE DATABASE
             db_id = transaction_record.get('db_id')
             if db_id:
                 try:
@@ -564,7 +721,7 @@ def get_transaction_status(request, transaction_id):
                         
                         txn.save()
                         
-                        logger.info(f"✅ Updated Exolix DB transaction {db_id}: {exolix_status} -> {mapped_status}")
+                        logger.info(f"Updated Exolix DB transaction {db_id}: {exolix_status} -> {mapped_status}")
                     else:
                         logger.debug(f"🔄 Exolix transaction {db_id} status unchanged: {mapped_status}")
                     
@@ -593,7 +750,7 @@ def get_transaction_status(request, transaction_id):
 
 
 # ------------------------------------------------------------------
-# ✅ GET TRANSACTION HISTORY - List all transactions (requires API key)
+# GET TRANSACTION HISTORY - List all transactions (requires API key)
 # ------------------------------------------------------------------
 @api_view(["GET"])
 @permission_classes([])
