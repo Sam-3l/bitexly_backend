@@ -359,7 +359,7 @@ def get_exolix_rate(request):
         if response.status_code != 200:
             error_data = response.json()
             return Response(
-                {"success": False, "message": "Failed to get rate", "details": error_data, "requestParams": params},
+                {"success": False, "message": "Failed to get rate", "details": error_data},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         
