@@ -53,14 +53,24 @@ def parse_coin_and_network(coin_code):
         'MATIC': ['POLYGON', 'ETH', 'BSC'],
     }
     
-    # Try to match multi-chain tokens
-    # Format: USDTRX, USDTSOL, ETHBSC, etc.
+    # Try to match multi-chain tokens with enhanced overlap detection
+    # Handles cases like USDT + TRX = USDTRX where 'T' is shared
     for base_coin, networks in multi_chain_coins.items():
         for network in networks:
-            # Check if coin_code matches pattern: BASECOIN + NETWORK
+            # Standard concatenation (no overlap)
             if coin_upper == f"{base_coin}{network}":
                 logger.info(f"Matched {coin_upper} -> coin={base_coin}, network={network}")
                 return (base_coin, network)
+            
+            # Check for character overlap: last char of coin == first char of network
+            # Example: USDT (ends with T) + TRX (starts with T) = USDTRX (one T, not two)
+            if len(base_coin) > 0 and len(network) > 0:
+                if base_coin[-1] == network[0]:
+                    # Construct the overlapped version
+                    overlapped = base_coin + network[1:]
+                    if coin_upper == overlapped:
+                        logger.info(f"Matched {coin_upper} -> coin={base_coin}, network={network} (overlapping '{base_coin[-1]}')")
+                        return (base_coin, network)
     
     # Native coins - use same for coin and network
     native_coins = {
