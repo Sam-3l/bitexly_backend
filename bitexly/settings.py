@@ -64,6 +64,8 @@ INSTALLED_APPS = [
     'onramp',
     'finchpay',
     'exolix',
+    'letsexchange',
+    'simpleswap',
 
     'allauth',
     'allauth.account',
@@ -263,6 +265,13 @@ FINCHPAY_SECRET_KEY = config("FINCHPAY_SECRET_KEY")
 
 # Exolix Configuration
 EXOLIX_API_KEY= config("EXOLIX_API_KEY")
+
+# LetsExchange Configuration
+LETSEXCHANGE_API_KEY = config("LETSEXCHANGE_API_KEY")
+LETSEXCHANGE_AFFILIATE_ID = config("LETSEXCHANGE_AFFILIATE_ID")
+
+# SimpleSwap Configuration
+SIMPLESWAP_API_KEY = config("SIMPLESWAP_API_KEY")
 
 # Media files
 MEDIA_URL = '/media/'
