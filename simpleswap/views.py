@@ -31,7 +31,7 @@ def parse_coin_and_network_simpleswap(coin_code):
     SimpleSwap uses format like: "btc:btc", "usdt:trc20", "eth:bsc"
     Changelly format: USDTRX, USDTSOL, ETHBSC, etc.
     
-    Returns: (ticker, network) in lowercase
+    Returns: (ticker, network) in lowercase.
     """
     coin_upper = coin_code.upper()
     
