@@ -140,7 +140,7 @@ def get_auth_headers():
     }
     
     if SIMPLESWAP_API_KEY:
-        headers["api-key"] = SIMPLESWAP_API_KEY
+        headers["x-api-key"] = SIMPLESWAP_API_KEY
     
     return headers
 
