@@ -4,7 +4,7 @@ from . import views
 app_name = 'simpleswap'
 
 urlpatterns = [
-    # Currencies.
+    # Currencies
     path('currencies/', views.get_simpleswap_currencies, name='get-currencies'),
     path('pairs/', views.get_exchange_pairs, name='get-pairs'),
     
