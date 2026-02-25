@@ -32,7 +32,7 @@ def parse_coin_and_network_letsexchange(coin_code):
     LetsExchange uses format like: coin="BTC", network_from="BTC", network_to="TRC20"
     Changelly format: USDTRX, USDTSOL, ETHBSC, etc.
     
-    Returns: (coin, network)
+    Returns: (coin, network).
     """
     coin_upper = coin_code.upper()
     
