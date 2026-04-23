@@ -425,13 +425,16 @@ def create_swap_transaction(request):
         
         result = response.json().get("result", {})
         
-        simpleswap_txn_id = result.get("publicId")
+        simpleswap_txn_id = result.get("publicId") or result.get("id")
         
         # ✅ CREATE DATABASE RECORD
+        # Always attempt to save; use request.user only when authenticated
         db_transaction = None
-        if should_save_transaction(request):
+        user_for_record = request.user if should_save_transaction(request) else None
+        
+        if user_for_record:
             db_transaction = create_transaction_record(
-                user=request.user,
+                user=user_for_record,
                 provider='SIMPLESWAP',
                 transaction_type='SWAP',
                 source_currency=coin_from_raw,
@@ -453,7 +456,7 @@ def create_swap_transaction(request):
                 }
             )
         
-        # ✅ STORE IN CACHE
+        # ✅ STORE IN CACHE (always, regardless of auth)
         timestamp = int(time.time() * 1000)
         transaction_key = f"txn_simpleswap_{simpleswap_txn_id}"
         
@@ -477,11 +480,18 @@ def create_swap_transaction(request):
         cache.set(transaction_key, transaction_record, timeout=86400)
         cache.set(f"simpleswap_id_{simpleswap_txn_id}", transaction_key, timeout=86400)
         
-        # Enhance response
+        # ✅ Enhance response — always include the SimpleSwap public ID + our internal ID if available
         enhanced_result = result.copy()
+        # Always expose the simpleswap public ID so the frontend can poll status
+        enhanced_result['simpleswapTxnId'] = simpleswap_txn_id
+        enhanced_result['publicId'] = simpleswap_txn_id
         if db_transaction:
             enhanced_result['ourTransactionId'] = db_transaction.transaction_id
             enhanced_result['transactionId'] = db_transaction.transaction_id
+        else:
+            # For unauthenticated users, use the cache key as a reference ID
+            enhanced_result['ourTransactionId'] = transaction_key
+            enhanced_result['transactionId'] = transaction_key
         
         logger.info(f"✅ Created SimpleSwap exchange: {simpleswap_txn_id}")
         
@@ -604,3 +614,216 @@ def get_transaction_status(request, public_id):
             {"success": False, "message": "Internal server error", "details": str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+# ------------------------------------------------------------------
+# ✅ POLL TRANSACTION STATUS (mirrors Changelly's ConfirmTransaction)
+# Called by frontend every ~10 seconds to update status display
+# ------------------------------------------------------------------
+@api_view(["POST"])
+@permission_classes([])
+def confirm_transaction(request):
+    """
+    Poll SimpleSwap for the latest exchange status and update DB + cache.
+    Frontend should call this endpoint with the publicId (simpleswap exchange ID)
+    every ~10 seconds while the transaction is in progress.
+
+    Request body:
+    {
+        "transaction_id": "<simpleswap publicId>"
+    }
+    """
+    try:
+        public_id = request.data.get("transaction_id") or request.data.get("publicId")
+
+        if not public_id:
+            return Response(
+                {"success": False, "error": "transaction_id (SimpleSwap publicId) is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        url = f"{SIMPLESWAP_API_BASE_URL}/exchanges/{public_id}"
+        response = requests.get(url, headers=get_auth_headers(), timeout=30)
+
+        if response.status_code != 200:
+            return Response(
+                {"success": False, "error": "Failed to fetch exchange from SimpleSwap", "details": response.json()},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        result = response.json().get("result", {})
+        simpleswap_status = result.get("status", "").lower()
+
+        status_mapping = {
+            "waiting": "PENDING",
+            "confirming": "PENDING",
+            "exchanging": "PENDING",
+            "sending": "PENDING",
+            "finished": "COMPLETED",
+            "failed": "FAILED",
+            "refunded": "FAILED",
+            "expired": "FAILED",
+        }
+        mapped_status = status_mapping.get(simpleswap_status, "PENDING")
+
+        # ✅ UPDATE CACHE
+        transaction_key = cache.get(f"simpleswap_id_{public_id}")
+        if not transaction_key:
+            transaction_key = f"txn_simpleswap_{public_id}"
+
+        transaction_record = cache.get(transaction_key)
+        if transaction_record:
+            transaction_record["status"] = mapped_status
+            transaction_record["simpleswap_status"] = simpleswap_status
+            transaction_record["updated_at"] = int(time.time() * 1000)
+            transaction_record["last_status_check"] = result
+
+            if result.get("txFrom"):
+                transaction_record["hash_in"] = result["txFrom"]
+            if result.get("txTo"):
+                transaction_record["hash_out"] = result["txTo"]
+
+            cache.set(transaction_key, transaction_record, timeout=86400)
+
+            # ✅ UPDATE DATABASE
+            db_id = transaction_record.get("db_id")
+            if db_id:
+                try:
+                    txn = Transaction.objects.get(id=db_id)
+                    if txn.status != mapped_status:
+                        txn.status = mapped_status
+                        if not txn.provider_data:
+                            txn.provider_data = {}
+                        txn.provider_data["latest_status"] = result
+                        txn.provider_data["simpleswap_status"] = simpleswap_status
+                        txn.provider_data["last_checked"] = timezone.now().isoformat()
+
+                        if result.get("txTo"):
+                            txn.transaction_hash = result["txTo"]
+                            txn.provider_data["txTo"] = result["txTo"]
+                        if result.get("txFrom"):
+                            txn.provider_data["txFrom"] = result["txFrom"]
+
+                        if mapped_status == "COMPLETED" and not txn.completed_at:
+                            txn.completed_at = timezone.now()
+
+                        txn.save()
+                        logger.info(f"✅ Updated SimpleSwap DB transaction {db_id}: {simpleswap_status} -> {mapped_status}")
+                    else:
+                        logger.debug(f"🔄 SimpleSwap transaction {db_id} status unchanged: {mapped_status}")
+
+                except Transaction.DoesNotExist:
+                    logger.error(f"❌ DB transaction {db_id} not found for SimpleSwap ID {public_id}")
+            else:
+                logger.debug(f"⚠️ No DB record for SimpleSwap transaction {public_id} (non-authenticated user)")
+        else:
+            logger.warning(f"⚠️ No cached transaction found for SimpleSwap ID: {public_id}")
+
+        return Response(
+            {
+                "success": True,
+                "result": result,
+                "mappedStatus": mapped_status,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    except Exception as e:
+        logger.error(f"SimpleSwap confirm transaction error: {str(e)}", exc_info=True)
+        return Response(
+            {"success": False, "error": str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+# ------------------------------------------------------------------
+# ✅ SIMPLESWAP WEBHOOK (for server-side push updates from SimpleSwap)
+# Register this URL in your SimpleSwap partner dashboard as the callback URL
+# ------------------------------------------------------------------
+@api_view(["POST"])
+@permission_classes([])
+def simpleswap_webhook(request):
+    """
+    Receives real-time status push notifications from SimpleSwap.
+    Register this endpoint URL in your SimpleSwap partner dashboard.
+
+    SimpleSwap sends a POST with the exchange object whenever status changes.
+    """
+    try:
+        payload = request.data
+
+        # SimpleSwap sends the exchange object directly (same shape as GET /exchanges/{id})
+        public_id = payload.get("publicId") or payload.get("id")
+        simpleswap_status = payload.get("status", "").lower()
+
+        if not public_id:
+            logger.warning("⚠️ SimpleSwap webhook received payload with no publicId")
+            return Response({"success": True}, status=status.HTTP_200_OK)
+
+        logger.info(f"📩 SimpleSwap webhook: {public_id} -> {simpleswap_status}")
+
+        status_mapping = {
+            "waiting": "PENDING",
+            "confirming": "PENDING",
+            "exchanging": "PENDING",
+            "sending": "PENDING",
+            "finished": "COMPLETED",
+            "failed": "FAILED",
+            "refunded": "FAILED",
+            "expired": "FAILED",
+        }
+        mapped_status = status_mapping.get(simpleswap_status, "PENDING")
+
+        # ✅ UPDATE CACHE
+        transaction_key = cache.get(f"simpleswap_id_{public_id}")
+        if not transaction_key:
+            transaction_key = f"txn_simpleswap_{public_id}"
+
+        transaction_record = cache.get(transaction_key)
+        if transaction_record:
+            transaction_record["status"] = mapped_status
+            transaction_record["simpleswap_status"] = simpleswap_status
+            transaction_record["updated_at"] = int(time.time() * 1000)
+            transaction_record["last_webhook_payload"] = payload
+
+            if payload.get("txFrom"):
+                transaction_record["hash_in"] = payload["txFrom"]
+            if payload.get("txTo"):
+                transaction_record["hash_out"] = payload["txTo"]
+
+            cache.set(transaction_key, transaction_record, timeout=86400)
+
+            # ✅ UPDATE DATABASE
+            db_id = transaction_record.get("db_id")
+            if db_id:
+                try:
+                    txn = Transaction.objects.get(id=db_id)
+                    txn.status = mapped_status
+
+                    if not txn.provider_data:
+                        txn.provider_data = {}
+                    txn.provider_data["webhook_payload"] = payload
+                    txn.provider_data["simpleswap_status"] = simpleswap_status
+                    txn.provider_data["last_webhook"] = timezone.now().isoformat()
+
+                    if payload.get("txTo"):
+                        txn.transaction_hash = payload["txTo"]
+                        txn.provider_data["txTo"] = payload["txTo"]
+                    if payload.get("txFrom"):
+                        txn.provider_data["txFrom"] = payload["txFrom"]
+
+                    if mapped_status == "COMPLETED" and not txn.completed_at:
+                        txn.completed_at = timezone.now()
+
+                    txn.save()
+                    logger.info(f"✅ Webhook updated SimpleSwap DB transaction {db_id}: {simpleswap_status} -> {mapped_status}")
+
+                except Transaction.DoesNotExist:
+                    logger.error(f"❌ Webhook: DB transaction {db_id} not found for SimpleSwap ID {public_id}")
+
+        # Always return 200 to SimpleSwap so they don't retry
+        return Response({"success": True}, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        logger.error(f"SimpleSwap webhook error: {str(e)}", exc_info=True)
+        # Still return 200 to prevent SimpleSwap from spamming retries
+        return Response({"success": True}, status=status.HTTP_200_OK)
