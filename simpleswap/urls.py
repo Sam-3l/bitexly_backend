@@ -14,4 +14,10 @@ urlpatterns = [
     # Exchange
     path('create-transaction/', views.create_swap_transaction, name='create-transaction'),
     path('exchange/<str:public_id>/', views.get_transaction_status, name='get-exchange-status'),
+
+    # Status polling (frontend calls this every ~10s, mirrors Changelly's confirm-transaction)
+    path('confirm-transaction/', views.confirm_transaction, name='confirm-transaction'),
+
+    # Webhook (register this URL in SimpleSwap partner dashboard as callback URL)
+    path('webhook/', views.simpleswap_webhook, name='webhook'),
 ]
