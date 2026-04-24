@@ -433,10 +433,18 @@ def create_swap_transaction(request):
         
         # Enhance response
         enhanced_result = result.copy()
+        # CRITICAL: always expose the native LetsExchange transaction_id so the
+        # frontend can pass it to confirm-transaction for status polling.
+        enhanced_result['letsexchangeTxnId'] = letsexchange_txn_id
+        # transactionId MUST be the LetsExchange native ID — confirm_transaction
+        # passes this value directly to the LetsExchange status API.
+        enhanced_result['transactionId'] = letsexchange_txn_id
         if db_transaction:
             enhanced_result['ourTransactionId'] = db_transaction.transaction_id
-            enhanced_result['transactionId'] = db_transaction.transaction_id
-        
+        else:
+            # For unauthenticated users, keep the cache key as a secondary reference.
+            enhanced_result['ourTransactionId'] = transaction_key
+
         logger.info(f"✅ Created LetsExchange transaction: {letsexchange_txn_id}")
         
         return Response(
@@ -559,5 +567,128 @@ def get_transaction_status(request, transaction_id):
         logger.error(f"LetsExchange get transaction status error: {str(e)}", exc_info=True)
         return Response(
             {"success": False, "message": "Internal server error", "details": str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+# ------------------------------------------------------------------
+# ✅ CONFIRM TRANSACTION (mirrors Changelly & SimpleSwap pattern)
+# Called by frontend every ~10 seconds to poll status and update DB/cache.
+# ------------------------------------------------------------------
+@api_view(["POST"])
+@permission_classes([])
+def confirm_transaction(request):
+    """
+    Poll LetsExchange for the latest transaction status and update DB + cache.
+    Frontend should call this endpoint with the LetsExchange transaction_id
+    every ~10 seconds while the transaction is in progress.
+
+    Request body:
+    {
+        "transaction_id": "<letsexchange transaction_id>"
+    }
+    """
+    try:
+        transaction_id = request.data.get("transaction_id") or request.data.get("letsexchangeTxnId")
+
+        if not transaction_id:
+            return Response(
+                {"success": False, "error": "transaction_id (LetsExchange transaction ID) is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        url = f"{LETSEXCHANGE_API_BASE_URL}/v1/transaction/{transaction_id}"
+        response = requests.get(url, headers=get_auth_headers(), timeout=30)
+
+        if response.status_code != 200:
+            return Response(
+                {"success": False, "error": "Failed to fetch transaction from LetsExchange", "details": response.json()},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        result = response.json()
+        letsexchange_status = result.get("status", "").lower()
+
+        status_mapping = {
+            "wait": "PENDING",
+            "confirmation": "PENDING",
+            "confirmed": "PENDING",
+            "exchanging": "PENDING",
+            "sending": "PENDING",
+            "sending_confirmation": "PENDING",
+            "success": "COMPLETED",
+            "aml_check_failed": "FAILED",
+            "overdue": "FAILED",
+            "error": "FAILED",
+            "refund": "FAILED",
+        }
+        mapped_status = status_mapping.get(letsexchange_status, "PENDING")
+
+        # ✅ UPDATE CACHE
+        transaction_key = cache.get(f"letsexchange_id_{transaction_id}")
+        if not transaction_key:
+            transaction_key = f"txn_letsexchange_{transaction_id}"
+
+        transaction_record = cache.get(transaction_key)
+        if transaction_record:
+            transaction_record["status"] = mapped_status
+            transaction_record["letsexchange_status"] = letsexchange_status
+            transaction_record["updated_at"] = int(time.time() * 1000)
+            transaction_record["last_status_check"] = result
+
+            if result.get("hash_in"):
+                transaction_record["hash_in"] = result["hash_in"]
+            if result.get("hash_out"):
+                transaction_record["hash_out"] = result["hash_out"]
+
+            cache.set(transaction_key, transaction_record, timeout=86400)
+
+            # ✅ UPDATE DATABASE
+            db_id = transaction_record.get("db_id")
+            if db_id:
+                try:
+                    txn = Transaction.objects.get(id=db_id)
+                    if txn.status != mapped_status:
+                        txn.status = mapped_status
+                        if not txn.provider_data:
+                            txn.provider_data = {}
+                        txn.provider_data["latest_status"] = result
+                        txn.provider_data["letsexchange_status"] = letsexchange_status
+                        txn.provider_data["last_checked"] = timezone.now().isoformat()
+
+                        if result.get("hash_out"):
+                            txn.transaction_hash = result["hash_out"]
+                            txn.provider_data["hash_out"] = result["hash_out"]
+                        if result.get("hash_in"):
+                            txn.provider_data["hash_in"] = result["hash_in"]
+
+                        if mapped_status == "COMPLETED" and not txn.completed_at:
+                            txn.completed_at = timezone.now()
+
+                        txn.save()
+                        logger.info(f"✅ Updated LetsExchange DB transaction {db_id}: {letsexchange_status} -> {mapped_status}")
+                    else:
+                        logger.debug(f"🔄 LetsExchange transaction {db_id} status unchanged: {mapped_status}")
+
+                except Transaction.DoesNotExist:
+                    logger.error(f"❌ DB transaction {db_id} not found for LetsExchange ID {transaction_id}")
+            else:
+                logger.debug(f"⚠️ No DB record for LetsExchange transaction {transaction_id} (non-authenticated user)")
+        else:
+            logger.warning(f"⚠️ No cached transaction found for LetsExchange ID: {transaction_id}")
+
+        return Response(
+            {
+                "success": True,
+                "result": result,
+                "mappedStatus": mapped_status,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    except Exception as e:
+        logger.error(f"LetsExchange confirm transaction error: {str(e)}", exc_info=True)
+        return Response(
+            {"success": False, "error": str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
