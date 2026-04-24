@@ -485,13 +485,16 @@ def create_swap_transaction(request):
         # Always expose the simpleswap public ID so the frontend can poll status
         enhanced_result['simpleswapTxnId'] = simpleswap_txn_id
         enhanced_result['publicId'] = simpleswap_txn_id
+        # CRITICAL: transactionId MUST be the SimpleSwap publicId for polling to work.
+        # confirm_transaction and get_transaction_status both pass this value directly
+        # to the SimpleSwap API — sending the cache key prefix breaks status polling.
+        enhanced_result['transactionId'] = simpleswap_txn_id
         if db_transaction:
             enhanced_result['ourTransactionId'] = db_transaction.transaction_id
-            enhanced_result['transactionId'] = db_transaction.transaction_id
         else:
-            # For unauthenticated users, use the cache key as a reference ID
+            # For unauthenticated users, store cache key separately so frontend
+            # can reference it, but transactionId stays as the SimpleSwap publicId.
             enhanced_result['ourTransactionId'] = transaction_key
-            enhanced_result['transactionId'] = transaction_key
         
         logger.info(f"✅ Created SimpleSwap exchange: {simpleswap_txn_id}")
         
