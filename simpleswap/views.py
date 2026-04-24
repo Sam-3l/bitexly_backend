@@ -423,8 +423,11 @@ def create_swap_transaction(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         
-        result = response.json().get("result", {})
-        
+        # Defensive wrapper: same logic as get_transaction_status.
+        # POST /exchanges wraps in {"result":{...}} but handle direct response too.
+        _raw_create = response.json()
+        result = _raw_create.get("result") if (isinstance(_raw_create, dict) and "result" in _raw_create) else _raw_create
+
         simpleswap_txn_id = result.get("publicId") or result.get("id")
         
         # ✅ CREATE DATABASE RECORD
@@ -532,12 +535,25 @@ def get_transaction_status(request, public_id):
         response = requests.get(url, headers=get_auth_headers(), timeout=30)
         
         if response.status_code != 200:
+            # Upstream API failed — return cached status so frontend polling stays alive
+            # instead of throwing an error that kills the polling loop.
+            fallback_key = cache.get(f"simpleswap_id_{public_id}") or f"txn_simpleswap_{public_id}"
+            cached = cache.get(fallback_key) or {}
+            logger.warning(f"SimpleSwap status API failed ({response.status_code}) for {public_id}, using cached status")
             return Response(
-                {"success": False, "message": "Failed to fetch exchange", "details": response.json()},
-                status=status.HTTP_400_BAD_REQUEST,
+                {
+                    "success": True,
+                    "transaction": {"status": cached.get("simpleswap_status", "waiting"), "publicId": public_id},
+                    "mappedStatus": cached.get("status", "PENDING"),
+                    "fromCache": True,
+                },
+                status=status.HTTP_200_OK,
             )
-        
-        result = response.json().get("result", {})
+
+        # SimpleSwap v3 GET /exchanges/{id} may return the object directly (no "result" wrapper).
+        # Handle both shapes defensively so polling never silently returns empty {}.
+        _raw_status = response.json()
+        result = _raw_status.get("result") if (isinstance(_raw_status, dict) and "result" in _raw_status) else _raw_status
         
         simpleswap_status = result.get('status', '').lower()
         
@@ -648,12 +664,22 @@ def confirm_transaction(request):
         response = requests.get(url, headers=get_auth_headers(), timeout=30)
 
         if response.status_code != 200:
+            fallback_key = cache.get(f"simpleswap_id_{public_id}") or f"txn_simpleswap_{public_id}"
+            cached = cache.get(fallback_key) or {}
+            logger.warning(f"SimpleSwap confirm API failed ({response.status_code}) for {public_id}, using cached status")
             return Response(
-                {"success": False, "error": "Failed to fetch exchange from SimpleSwap", "details": response.json()},
-                status=status.HTTP_400_BAD_REQUEST,
+                {
+                    "success": True,
+                    "result": {"status": cached.get("simpleswap_status", "waiting"), "publicId": public_id},
+                    "mappedStatus": cached.get("status", "PENDING"),
+                    "fromCache": True,
+                },
+                status=status.HTTP_200_OK,
             )
 
-        result = response.json().get("result", {})
+        # Defensive wrapper: same as get_transaction_status
+        _raw = response.json()
+        result = _raw.get("result") if (isinstance(_raw, dict) and "result" in _raw) else _raw
         simpleswap_status = result.get("status", "").lower()
 
         status_mapping = {
