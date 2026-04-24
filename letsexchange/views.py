@@ -477,15 +477,30 @@ def get_transaction_status(request, transaction_id):
     """
     try:
         url = f"{LETSEXCHANGE_API_BASE_URL}/v1/transaction/{transaction_id}"
-        
-        response = requests.get(url, headers=get_auth_headers(), timeout=30)
-        
+
+        # Some LetsExchange partner setups require affiliate_id on GET lookups too
+        params = {}
+        if LETSEXCHANGE_AFFILIATE_ID:
+            params["affiliate_id"] = LETSEXCHANGE_AFFILIATE_ID
+
+        response = requests.get(url, params=params, headers=get_auth_headers(), timeout=30)
+
         if response.status_code != 200:
+            # Upstream API failed — return cached status so frontend polling stays alive
+            # instead of throwing an error that kills the polling loop.
+            fallback_key = cache.get(f"letsexchange_id_{transaction_id}") or f"txn_letsexchange_{transaction_id}"
+            cached = cache.get(fallback_key) or {}
+            logger.warning(f"LetsExchange status API failed ({response.status_code}) for {transaction_id}, using cached status")
             return Response(
-                {"success": False, "message": "Failed to fetch transaction", "details": response.json()},
-                status=status.HTTP_400_BAD_REQUEST,
+                {
+                    "success": True,
+                    "transaction": {"status": cached.get("letsexchange_status", "wait"), "transaction_id": transaction_id},
+                    "mappedStatus": cached.get("status", "PENDING"),
+                    "fromCache": True,
+                },
+                status=status.HTTP_200_OK,
             )
-        
+
         result = response.json()
         
         letsexchange_status = result.get('status', '').lower()
@@ -598,12 +613,25 @@ def confirm_transaction(request):
             )
 
         url = f"{LETSEXCHANGE_API_BASE_URL}/v1/transaction/{transaction_id}"
-        response = requests.get(url, headers=get_auth_headers(), timeout=30)
+
+        params = {}
+        if LETSEXCHANGE_AFFILIATE_ID:
+            params["affiliate_id"] = LETSEXCHANGE_AFFILIATE_ID
+
+        response = requests.get(url, params=params, headers=get_auth_headers(), timeout=30)
 
         if response.status_code != 200:
+            fallback_key = cache.get(f"letsexchange_id_{transaction_id}") or f"txn_letsexchange_{transaction_id}"
+            cached = cache.get(fallback_key) or {}
+            logger.warning(f"LetsExchange confirm API failed ({response.status_code}) for {transaction_id}, using cached status")
             return Response(
-                {"success": False, "error": "Failed to fetch transaction from LetsExchange", "details": response.json()},
-                status=status.HTTP_400_BAD_REQUEST,
+                {
+                    "success": True,
+                    "result": {"status": cached.get("letsexchange_status", "wait"), "transaction_id": transaction_id},
+                    "mappedStatus": cached.get("status", "PENDING"),
+                    "fromCache": True,
+                },
+                status=status.HTTP_200_OK,
             )
 
         result = response.json()
